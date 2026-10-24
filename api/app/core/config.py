@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn
+from pydantic import PostgresDsn, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,9 +18,11 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     database_url: PostgresDsn
     redis_url: RedisDsn
+    # Only needed by the seed script; SecretStr hides the value in logs and reprs.
+    seed_password: SecretStr | None = None
 
 
 @lru_cache
 def get_settings() -> Settings:
     """Return the settings, built once and reused (cached) for the life of the process."""
-    return Settings()  # type: ignore[call-arg]  # required fields come from the environment
+    return Settings()

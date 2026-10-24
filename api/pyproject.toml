@@ -11,6 +11,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
+    "pwdlib[argon2]>=0.2",
 ]
 
 [project.optional-dependencies]
@@ -47,10 +48,15 @@ select = [
     "ASYNC", # async pitfalls (e.g. blocking calls in async code)
 ]
 
+[tool.ruff.lint.isort]
+# Our `alembic/` migrations folder would otherwise make ruff think `alembic` is our own code.
+known-third-party = ["alembic"]
+
 # ---------- mypy (static type checking) ----------
 [tool.mypy]
 python_version = "3.12"
 strict = true
+files = ["app", "tests"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]

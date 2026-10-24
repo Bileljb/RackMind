@@ -107,13 +107,13 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 - [x] Create folder structure from section 3
 - [x] Set up `api/` with `pyproject.toml`, ruff, mypy, pytest config
 - [x] Pydantic settings class reading from environment
-- [ ] `docker-compose.yml` with Postgres, Redis, and the API (hot reload)
-- [ ] Async DB session setup + dependency (`get_db`)
-- [ ] SQLAlchemy models: `User`, `Rack`, `Server`, `Metric`, `Incident`, `Comment`, `AuditLog`
-- [ ] Alembic initial migration
-- [ ] Seed script: 4 racks, 20 servers, 3 users (one per role)
-- [ ] `GET /health` endpoint + first pytest test
-- [ ] `docs/modules/foundation.md` note
+- [x] `docker-compose.yml` with Postgres, Redis, and the API (hot reload)
+- [x] Async DB session setup + dependency (`get_db`)
+- [x] SQLAlchemy models: `User`, `Rack`, `Server`, `Metric`, `Incident`, `Comment`, `AuditLog`
+- [x] Alembic initial migration
+- [x] Seed script: 4 racks, 20 servers, 3 users (one per role)
+- [x] `GET /health` endpoint + first pytest test
+- [x] `docs/modules/foundation.md` note
 
 **Done when:** `docker compose up` starts everything, migrations run, seed data is present, health test passes.
 
