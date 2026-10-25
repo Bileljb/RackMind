@@ -52,6 +52,26 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # The slim image has no curl, so use Python's standard library to call /health.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  simulator:
+    build: ./simulator
+    environment:
+      SIM_API_URL: http://api:8000
+      SIM_INTERVAL_S: 5
+      # Fault schedule, e.g. "overheat:R02:60:600,memory_leak:r03-srv02:30:900". Empty = all normal.
+      SIM_FAULTS: ${SIM_FAULTS:-}
+    volumes:
+      # Code is mounted like the API's; after editing, run `docker compose restart simulator`.
+      - ./simulator:/app
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   db-data:

@@ -123,15 +123,15 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 
 **Learn:** async Python, Pydantic validation, httpx, pytest fixtures.
 
-- [ ] Metric schema: server_id, timestamp, cpu_temp, power_w, disk_used_pct, memory_used_pct, network_mbps
-- [ ] `POST /metrics` ingestion (single and batch), validated with Pydantic
-- [ ] Read endpoints: list racks, list servers, latest metrics per server, metric history with time range
-- [ ] Index on `(server_id, timestamp)`
-- [ ] Simulator service: emits normal readings with noise every 5s for all servers
-- [ ] Fault injector with 3 faults: overheating rack, disk filling/failing, memory leak
-- [ ] Configurable fault schedule (CLI flags or env)
-- [ ] Tests: ingestion validation, read endpoints
-- [ ] `docs/modules/pipeline.md` note
+- [x] Metric schema: server_id, timestamp, cpu_temp, power_w, disk_used_pct, memory_used_pct, network_mbps
+- [x] `POST /metrics` ingestion (single and batch), validated with Pydantic
+- [x] Read endpoints: list racks, list servers, latest metrics per server, metric history with time range
+- [x] Index on `(server_id, timestamp)`
+- [x] Simulator service: emits normal readings with noise every 5s for all servers
+- [x] Fault injector with 3 faults: overheating rack, disk filling/failing, memory leak
+- [x] Configurable fault schedule (CLI flags or env)
+- [x] Tests: ingestion validation, read endpoints
+- [x] `docs/modules/pipeline.md` note
 
 **Done when:** running the simulator fills the DB and faults are visible in the stored data.
 
