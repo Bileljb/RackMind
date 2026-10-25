@@ -73,5 +73,22 @@ services:
       api:
         condition: service_healthy
 
+  web:
+    build: ./web
+    environment:
+      # Used by next.config.ts: the Next.js server proxies /api/* to FastAPI on this address.
+      API_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app
+      # Keep the container's own node_modules and build cache: the Windows host's copies
+      # contain Windows-only native binaries that would not run in this Linux container.
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   db-data:

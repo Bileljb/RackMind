@@ -25,6 +25,15 @@ async def test_list_servers_all_and_by_rack(client: AsyncClient, servers: list[S
     assert [s["hostname"] for s in in_rack] == ["r01-srv01", "r01-srv02"]
 
 
+async def test_get_server(client: AsyncClient, servers: list[Server]) -> None:
+    found = await client.get(f"/servers/{servers[0].id}")
+    missing = await client.get("/servers/9999")
+
+    assert found.status_code == 200
+    assert found.json()["hostname"] == "r01-srv01"
+    assert missing.status_code == 404
+
+
 async def test_latest_returns_newest_reading_per_server(
     client: AsyncClient, servers: list[Server]
 ) -> None:

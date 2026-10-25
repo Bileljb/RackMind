@@ -141,14 +141,14 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 
 **Learn:** nextjs.org/learn (App Router, server vs client components, route handlers, data fetching).
 
-- [ ] Next.js + TypeScript + Tailwind setup, add `web` to Docker Compose
-- [ ] Typed API client (types matching backend schemas)
-- [ ] Layout and navigation
-- [ ] Rack grid / heatmap colored by temperature
-- [ ] Server detail page with metric charts (Recharts)
-- [ ] Polling every 5s for fresh data
-- [ ] Loading and error states
-- [ ] `docs/modules/dashboard.md` note
+- [x] Next.js + TypeScript + Tailwind setup, add `web` to Docker Compose
+- [x] Typed API client (types matching backend schemas)
+- [x] Layout and navigation
+- [x] Rack grid / heatmap colored by temperature
+- [x] Server detail page with metric charts (Recharts)
+- [x] Polling every 5s for fresh data
+- [x] Loading and error states
+- [x] `docs/modules/dashboard.md` note
 
 **Done when:** you can start the simulator and watch a fault appear on the dashboard.
 

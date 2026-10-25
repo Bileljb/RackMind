@@ -26,6 +26,14 @@ async def list_servers(db: DbSession, rack_id: int | None = None) -> list[Server
     return [ServerOut.model_validate(server) for server in servers]
 
 
+@router.get("/{server_id}")
+async def get_server(server_id: int, db: DbSession) -> ServerOut:
+    server = await db.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Server not found")
+    return ServerOut.model_validate(server)
+
+
 @router.get("/{server_id}/metrics")
 async def server_metric_history(
     server_id: int,

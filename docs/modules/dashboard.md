@@ -1,0 +1,25 @@
+# Dashboard: how it works
+
+- **Stack:** Next.js 16 (App Router, Cache Components on), TypeScript, Tailwind v4, SWR for client fetching and polling, Recharts for charts. It runs at `http://localhost:3000` (Compose service `web`).
+- **Proxy instead of CORS:** the browser only calls `/api/...` on the Next.js app. `next.config.ts` rewrites those calls to FastAPI (`API_URL`, which is `http://api:8000` in Compose). Same origin also means the Phase 5 auth cookie will just work.
+- **Server vs client components:**
+  - Pages (`app/page.tsx`, `app/servers/[id]/page.tsx`) are Server Components that render the static shell.
+  - Anything that fetches or polls is a Client Component (`"use client"`) under `src/components/`.
+  - With Cache Components, request-time values (`params`, `usePathname()`, the clock) must be read inside `<Suspense>` or in an effect. `next build` fails if they aren't.
+- **Typed API client:**
+  - `src/lib/api.ts` holds TS types that mirror the Pydantic `*Out` schemas, plus `apiGet<T>()`, which throws an `ApiError` carrying the HTTP status.
+  - `src/lib/hooks.ts` wraps each endpoint in an SWR hook. Live data (`useLatestMetrics`, `useMetricHistory`) refreshes every 5s. Inventory (racks, servers) is fetched once per visit.
+- **Rack grid** (`components/rack-grid.tsx`):
+  - Racks are shown as columns, with U5 at the top.
+  - Each cell shows the CPU temperature as text, plus a band from `lib/temperature.ts`: normal < 60, warm ≥ 60, hot ≥ 70, critical ≥ 80 °C.
+  - A band shows as a status icon, a tint and a label, never color alone. No reading for 30s shows "No recent data".
+  - These bands are display-only. Incidents come from the Phase 4 detector.
+- **Server page** (`components/server-detail.tsx`):
+  - One line chart per metric (`metric-chart.tsx`): one series, no second y-axis, 0–100 for percentages, hover crosshair and tooltip.
+  - A time-range picker (15m–24h) and a table of the latest readings.
+- **Loading and error states** (`components/states.tsx`):
+  - Skeletons while loading, and an error panel with a retry button if nothing loaded.
+  - If a refresh fails after data loaded, the last data stays on screen with a "Live updates paused" banner, and the live dot turns gray.
+  - `app/error.tsx` catches unexpected render errors.
+- **Colors** are tokens in `app/globals.css` (light and dark), used as Tailwind classes like `bg-surface` and `text-ink-2`. Change colors there, not in components.
+- **Commands** (in `web/`): `npm run dev`, `npm run lint`, `npm run typecheck`, `npm run format`, `npx next build`. Next.js recommends running `npm run dev` on the host for faster reloads; Docker on Windows is slower to notice file changes.
