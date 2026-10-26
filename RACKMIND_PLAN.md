@@ -160,18 +160,18 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 
 > The owner writes the detection logic. Claude Code explains concepts, scaffolds the worker, and reviews.
 
-- [ ] Worker setup (ARQ/Celery) + Docker Compose service
-- [ ] Enqueue a detection job when metrics arrive (or on a schedule)
-- [ ] Detection v1: fixed thresholds per metric (**owner writes**)
-- [ ] Detection v2: rolling baseline + z-score (**owner writes**)
-- [ ] Severity levels (info, warning, critical)
-- [ ] Incident creation with **deduplication** (one ongoing fault = one incident)
-- [ ] Auto-resolve suggestion when metrics return to normal
-- [ ] Incident lifecycle: `open -> acknowledged -> resolved`
-- [ ] Assignment, comments, audit log entries on every state change
-- [ ] Incident endpoints (list with filters, detail, transitions, comments)
-- [ ] Unit tests for detector (normal data, each fault type, deduplication)
-- [ ] `docs/modules/detection.md` note
+- [x] Worker setup (ARQ/Celery) + Docker Compose service
+- [x] Enqueue a detection job when metrics arrive (or on a schedule)
+- [x] Detection v1: fixed thresholds per metric (**owner writes**)
+- [x] Detection v2: rolling baseline + z-score (**owner writes**)
+- [x] Severity levels (info, warning, critical)
+- [x] Incident creation with **deduplication** (one ongoing fault = one incident)
+- [x] Auto-resolve suggestion when metrics return to normal
+- [x] Incident lifecycle: `open -> acknowledged -> resolved`
+- [x] Assignment, comments, audit log entries on every state change
+- [x] Incident endpoints (list with filters, detail, transitions, comments)
+- [x] Unit tests for detector (normal data, each fault type, deduplication)
+- [x] `docs/modules/detection.md` note
 
 **Done when:** one injected fault creates exactly one incident, which moves through the full lifecycle.
 

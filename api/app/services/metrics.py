@@ -1,3 +1,5 @@
+from collections import defaultdict
+from collections.abc import Collection
 from datetime import datetime
 
 from sqlalchemy import insert, select, true
@@ -65,3 +67,18 @@ async def metric_history(
         .order_by(Metric.timestamp)
     )
     return list(await db.scalars(stmt))
+
+
+async def recent_readings(
+    db: AsyncSession, server_ids: Collection[int], since: datetime
+) -> dict[int, list[Metric]]:
+    """Readings newer than `since` for several servers, grouped by server, oldest first."""
+    stmt = (
+        select(Metric)
+        .where(Metric.server_id.in_(server_ids), Metric.timestamp >= since)
+        .order_by(Metric.server_id, Metric.timestamp)
+    )
+    grouped: dict[int, list[Metric]] = defaultdict(list)
+    for metric in await db.scalars(stmt):
+        grouped[metric.server_id].append(metric)
+    return grouped

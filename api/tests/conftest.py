@@ -8,9 +8,9 @@ from sqlalchemy import URL, make_url, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.core.config import get_settings
-from app.deps import get_db
+from app.deps import get_db, get_queue
 from app.main import app
-from app.models import Base, Rack, Server
+from app.models import Base, Rack, Role, Server, User
 
 
 def _test_database_url() -> URL:
@@ -59,14 +59,33 @@ async def db(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         await conn.rollback()
 
 
+class FakeQueue:
+    """Stands in for the Redis job queue: records jobs instead of sending them."""
+
+    def __init__(self) -> None:
+        self.jobs: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def enqueue_job(self, function: str, *args: Any) -> None:
+        self.jobs.append((function, args))
+
+
 @pytest.fixture
-async def client(db: AsyncSession) -> AsyncIterator[AsyncClient]:
-    """HTTP client that calls the FastAPI app in-process, using the test session above."""
+def queue() -> FakeQueue:
+    return FakeQueue()
+
+
+@pytest.fixture
+async def client(db: AsyncSession, queue: FakeQueue) -> AsyncIterator[AsyncClient]:
+    """HTTP client that calls the FastAPI app in-process, using the test session above.
+
+    The app's startup (lifespan) does not run here, so no Redis is needed: `queue` replaces it.
+    """
 
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_queue] = lambda: queue
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
     app.dependency_overrides.clear()
@@ -85,6 +104,25 @@ async def servers(db: AsyncSession) -> list[Server]:
     db.add_all([rack_1, rack_2])
     await db.commit()
     return [*rack_1.servers, *rack_2.servers]
+
+
+@pytest.fixture
+async def users(db: AsyncSession) -> dict[Role, User]:
+    """One active user per role (the password hash is a dummy: tests don't log in)."""
+    by_role = {
+        role: User(
+            email=f"{role}@test.local", full_name=role.title(), hashed_password="x", role=role
+        )
+        for role in Role
+    }
+    db.add_all(by_role.values())
+    await db.commit()
+    return by_role
+
+
+def as_user(user: User) -> dict[str, str]:
+    """Request headers that act as `user` (temporary, until Phase 5 auth)."""
+    return {"X-User-Id": str(user.id)}
 
 
 def reading(server_id: int, timestamp: datetime | None = None, **overrides: Any) -> dict[str, Any]:

@@ -5,9 +5,10 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.queue import DETECT_JOB
 from app.models import Metric, Server
 from app.routers.metrics import MAX_BATCH_SIZE
-from tests.conftest import reading
+from tests.conftest import FakeQueue, reading
 
 
 async def count_metrics(db: AsyncSession) -> int:
@@ -102,3 +103,27 @@ async def test_batch_size_limits(client: AsyncClient, servers: list[Server], siz
     response = await client.post("/metrics/batch", json=[reading(servers[0].id)] * size)
 
     assert response.status_code == 422
+
+
+async def test_ingest_queues_one_detection_job_per_request(
+    client: AsyncClient, servers: list[Server], queue: FakeQueue
+) -> None:
+    first, second, _ = servers
+    batch = [reading(second.id), reading(first.id), reading(second.id)]
+
+    await client.post("/metrics/batch", json=batch)
+    await client.post("/metrics", json=reading(first.id))
+
+    # Duplicate server ids are merged and sorted; one job per request.
+    assert queue.jobs == [
+        (DETECT_JOB, ([first.id, second.id],)),
+        (DETECT_JOB, ([first.id],)),
+    ]
+
+
+async def test_rejected_batch_queues_nothing(
+    client: AsyncClient, servers: list[Server], queue: FakeQueue
+) -> None:
+    await client.post("/metrics/batch", json=[reading(servers[0].id), reading(9999)])
+
+    assert queue.jobs == []

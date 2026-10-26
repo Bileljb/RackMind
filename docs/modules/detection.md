@@ -1,0 +1,23 @@
+# Detection and incidents: how it works
+
+- **Flow:** `POST /metrics/batch` saves the readings, then pushes one `detect_anomalies([server ids])` job onto the ARQ queue in Redis (`app/core/queue.py`). The `worker` container (`app/workers/main.py`) picks the job up and runs `run_detection` (`app/services/detection.py`). Ingestion never waits for detection. If Redis is down, the API logs a warning and still returns 201, and the next batch triggers detection again.
+- **Detector** (`app/services/detector.py`) is made of pure functions with no database access. For each metric it compares the **mean of the last 30s** (about 6 readings, which smooths out noise) against two rules, and keeps the more severe result:
+  - **v1, fixed thresholds:** dangerous on any server. CPU: warning ≥ 70 °C, critical ≥ 80 °C (same as the dashboard bands). Disk and memory: warning ≥ 85 %, critical ≥ 95 %. Power and network have no fixed limit, because their normal level differs per server.
+  - **v2, rolling z-score:** z = (recent mean − baseline mean) / baseline std. The baseline is the server's own readings from 30 to 5 minutes ago; the 5-minute gap keeps the start of a drift out of the baseline. z ≥ 3 gives `info` and z ≥ 6 gives `warning`. It needs at least 30 baseline readings, and the std has a per-metric floor so a very steady metric doesn't turn tiny wobbles into huge z values. Only values **above** normal are flagged: right after a fault ends, the baseline still holds the high values, and a two-sided check would raise a false alarm on recovery.
+- **Severity:** `info` means "unusual for this server" (z-score only), `warning` is a strong deviation or a soft limit, `critical` is a hard limit. Compare severities with `Severity.rank`, not with strings.
+- **Deduplication:** a server has at most **one active incident** (status not `resolved`). A partial unique index, `uq_incidents_active_server`, enforces this in Postgres. New findings on a server that already has an active incident only raise its severity (logged as `incident.severity_raised`) and never lower it. Two jobs running at the same time can't both open one: the insert uses `ON CONFLICT DO NOTHING`.
+- **Recovery suggestion:** when a server with an active incident looks normal again, the detector sets `recovered_at`, and the API returns `recovery_suggested: true`. If the anomaly comes back, `recovered_at` is cleared. Nothing is ever resolved automatically; a person decides.
+- **Lifecycle** (`app/services/incidents.py`): `open → acknowledged → resolved`, with no skipping and no reopening (409 otherwise). Transitions and assignment lock the incident row (`SELECT … FOR UPDATE`) so two people acting at once don't overwrite each other.
+- **Audit trail:** every change writes an `audit_logs` row: `incident.opened` and `incident.severity_raised` (by the system, `actor_id = null`), and `incident.acknowledged`, `incident.resolved` and `incident.assigned` (by a user). Comments are their own table.
+- **Endpoints:**
+  - `GET /incidents?status=&severity=&server_id=&rack_id=&limit=&offset=`: newest first; repeat `status` or `severity` to match several values.
+  - `GET /incidents/{id}`: the incident, its comments and its history.
+  - `POST /incidents/{id}/acknowledge` and `POST /incidents/{id}/resolve`.
+  - `PUT /incidents/{id}/assignee` with `{"assignee_id": 3}` (`null` unassigns).
+  - `POST /incidents/{id}/comments` with `{"body": "..."}`.
+- **Who is acting (temporary):** until Phase 5, write endpoints read an `X-User-Id` header (`get_current_user` in `app/deps.py`). It is not secure. Phase 5 replaces only that function with the JWT cookie.
+- **Known limits (good interview material):**
+  - A rack-wide fault opens one incident per affected server, because nothing correlates them by rack.
+  - The z-score slowly "gets used to" a fault that lasts longer than its 30-minute baseline, so a long power or network anomaly can end up looking normal. Fixed thresholds don't have this problem.
+  - The z-score assumes roughly normal noise, so it misreads seasonal or bursty metrics.
+- **Tests:** `test_detector.py` (pure rules: normal noise, each fault type, recovery, std floor), `test_detection.py` (deduplication, escalation, recovery, the unique index) and `test_incidents.py` (lifecycle, 409s, assignment, comments, filters). Watch it live with `docker compose logs -f worker`.

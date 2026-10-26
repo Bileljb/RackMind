@@ -2,7 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException, status
 
-from app.deps import DbSession
+from app.core.queue import request_detection
+from app.deps import DbSession, Queue
 from app.schemas.metric import BatchResult, MetricIn, MetricOut
 from app.services import metrics as metrics_service
 from app.services.metrics import UnknownServersError
@@ -21,11 +22,12 @@ def _unknown_servers(error: UnknownServersError) -> HTTPException:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def ingest_one(reading: MetricIn, db: DbSession) -> MetricOut:
+async def ingest_one(reading: MetricIn, db: DbSession, queue: Queue) -> MetricOut:
     try:
         metric = await metrics_service.ingest_metric(db, reading)
     except UnknownServersError as error:
         raise _unknown_servers(error) from error
+    await request_detection(queue, [reading.server_id])
     return MetricOut.model_validate(metric)
 
 
@@ -33,11 +35,14 @@ async def ingest_one(reading: MetricIn, db: DbSession) -> MetricOut:
 async def ingest_batch(
     readings: Annotated[list[MetricIn], Body(min_length=1, max_length=MAX_BATCH_SIZE)],
     db: DbSession,
+    queue: Queue,
 ) -> BatchResult:
     try:
         inserted = await metrics_service.ingest_metrics(db, readings)
     except UnknownServersError as error:
         raise _unknown_servers(error) from error
+    # Detection runs in the worker, so this request returns as soon as the data is saved.
+    await request_detection(queue, (r.server_id for r in readings))
     return BatchResult(inserted=inserted)
 
 
