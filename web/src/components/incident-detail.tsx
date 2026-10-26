@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
+import { DiagnosisPanel } from "@/components/diagnosis-panel";
 import { RecoveryChip, SeverityBadge, StatusBadge } from "@/components/incident-badges";
 import { ErrorPanel, Skeleton } from "@/components/states";
 import {
@@ -71,6 +72,7 @@ export function IncidentDetailView({ incidentId }: { incidentId: number }) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-6">
+          <DiagnosisPanel incidentId={incident.id} />
           <Comments
             incidentId={incident.id}
             comments={comments}

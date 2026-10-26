@@ -10,6 +10,7 @@ const MINIMUM_ROLE = {
   comment: "operator",
   resolve: "engineer",
   assign: "engineer",
+  viewDiagnosis: "engineer", // also covers asking again and giving feedback
   manageUsers: "admin",
 } satisfies Record<string, Role>;
 

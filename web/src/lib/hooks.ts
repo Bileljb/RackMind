@@ -4,6 +4,7 @@ import useSWR, { type SWRConfiguration } from "swr";
 
 import {
   apiGet,
+  type Diagnosis,
   type Incident,
   type IncidentDetail,
   type IncidentStatus,
@@ -86,4 +87,16 @@ export function useIncidents(statuses: IncidentStatus[] = []) {
 
 export function useIncident(incidentId: number) {
   return useSWR<IncidentDetail>(`${INCIDENTS_KEY_PREFIX}/${incidentId}`, apiGet, pushed);
+}
+
+/**
+ * The incident's AI diagnosis. Only requested when `enabled` (engineers and admins): other
+ * roles would get 403. Its key starts with `/incidents`, so live events refresh it too.
+ */
+export function useDiagnosis(incidentId: number, enabled: boolean) {
+  return useSWR<Diagnosis>(
+    enabled ? `${INCIDENTS_KEY_PREFIX}/${incidentId}/diagnosis` : null,
+    apiGet,
+    pushed,
+  );
 }

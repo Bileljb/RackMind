@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Incident, IncidentStatus, Server
 from app.services import detector
+from app.services import diagnosis as diagnosis_service
 from app.services import metrics as metrics_service
 from app.services.audit import record_incident_event
 from app.services.detector import Finding
@@ -57,6 +58,8 @@ async def run_detection(db: AsyncSession, redis: ArqRedis, server_ids: Collectio
 
     for action, incident in changes:
         await publish_incident_event(redis, action, incident)
+        if action == "incident.opened":
+            await diagnosis_service.enqueue(redis, incident.id)  # ask the AI for a cause
 
 
 async def _active_incidents(db: AsyncSession, server_ids: Collection[int]) -> dict[int, Incident]:
@@ -140,5 +143,6 @@ async def _open_incident(
             for f in findings
         ],
     )
+    diagnosis_service.add_pending(db, incident.id)
     logger.info("Opened incident %s (%s) on %s", incident.id, worst.severity, server.hostname)
     return incident

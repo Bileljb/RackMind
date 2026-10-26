@@ -3,6 +3,7 @@
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.comment import Comment
+from app.models.diagnosis import Diagnosis, DiagnosisError, DiagnosisFeedback, DiagnosisStatus
 from app.models.incident import Incident, IncidentStatus, Severity
 from app.models.metric import Metric
 from app.models.rack import Rack
@@ -13,6 +14,10 @@ __all__ = [
     "AuditLog",
     "Base",
     "Comment",
+    "Diagnosis",
+    "DiagnosisError",
+    "DiagnosisFeedback",
+    "DiagnosisStatus",
     "Incident",
     "IncidentStatus",
     "Metric",

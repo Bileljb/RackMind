@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Shared secret the simulator sends in `X-API-Key` to push metrics (it is not a user).
     ingest_api_key: SecretStr = Field(min_length=16)
 
+    # AI diagnosis (Groq). No key = the feature is off and incidents say so; nothing else breaks.
+    groq_api_key: SecretStr | None = None
+    groq_model: str = Field(default="openai/gpt-oss-120b", min_length=1)
+    groq_timeout_s: float = Field(default=30, gt=0)  # per attempt
+    groq_max_retries: int = Field(default=3, ge=0)  # on timeouts, 429 and 5xx, with backoff
+
 
 @lru_cache
 def get_settings() -> Settings:

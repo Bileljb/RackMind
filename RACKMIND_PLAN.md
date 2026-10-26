@@ -203,17 +203,17 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 
 > The owner writes the prompt and the response schema. Claude Code scaffolds the integration and reviews.
 
-- [ ] Groq client wrapper with timeout, retries with backoff (handle 429 rate limits), `GROQ_API_KEY` and `GROQ_MODEL` from env (add both to `.env.example`; check the Groq docs for current model names and structured-output support)
-- [ ] Response schema (Pydantic): `probable_cause`, `confidence` (0-1), `recommended_steps[]`, `evidence[]` (**owner designs**)
-- [ ] Prompt: recent metrics window (e.g. last 30 min), incident info, similar past incidents (**owner writes**)
-- [ ] AI worker job triggered when an incident is created
-- [ ] Validate output with Pydantic; handle invalid JSON, timeouts, API errors (store failure state)
-- [ ] Store diagnosis with the incident
-- [ ] UI: diagnosis panel on the incident page with confidence and evidence shown
-- [ ] "Was this helpful?" feedback button stored in DB
-- [ ] Clear UI label that suggestions are AI-generated and never auto-executed
-- [ ] Tests with a mocked LLM client (valid, invalid, timeout)
-- [ ] `docs/modules/ai-diagnosis.md` note
+- [x] Groq client wrapper with timeout, retries with backoff (handle 429 rate limits), `GROQ_API_KEY` and `GROQ_MODEL` from env (add both to `.env.example`; check the Groq docs for current model names and structured-output support)
+- [x] Response schema (Pydantic): `probable_cause`, `confidence` (0-1), `recommended_steps[]`, `evidence[]` (**owner designs**)
+- [x] Prompt: recent metrics window (e.g. last 30 min), incident info, similar past incidents (**owner writes**)
+- [x] AI worker job triggered when an incident is created
+- [x] Validate output with Pydantic; handle invalid JSON, timeouts, API errors (store failure state)
+- [x] Store diagnosis with the incident
+- [x] UI: diagnosis panel on the incident page with confidence and evidence shown
+- [x] "Was this helpful?" feedback button stored in DB
+- [x] Clear UI label that suggestions are AI-generated and never auto-executed
+- [x] Tests with a mocked LLM client (valid, invalid, timeout)
+- [x] `docs/modules/ai-diagnosis.md` note
 
 **Done when:** a new incident automatically gets a validated diagnosis, and failures degrade gracefully.
 

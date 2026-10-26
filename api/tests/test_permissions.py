@@ -40,6 +40,9 @@ ENDPOINTS = [
     Endpoint("POST", "/incidents/{incident}/comments", Role.OPERATOR, {"body": "on it"}),
     Endpoint("POST", "/incidents/{incident}/resolve", Role.ENGINEER),
     Endpoint("PUT", "/incidents/{incident}/assignee", Role.ENGINEER, {"assignee_id": None}),
+    Endpoint("GET", "/incidents/{incident}/diagnosis", Role.ENGINEER),
+    Endpoint("POST", "/incidents/{incident}/diagnosis", Role.ENGINEER),
+    Endpoint("PUT", "/incidents/{incident}/diagnosis/feedback", Role.ENGINEER, {"helpful": True}),
     Endpoint("GET", "/users/directory", Role.OPERATOR),
     Endpoint("GET", "/users", Role.ADMIN),
     Endpoint(

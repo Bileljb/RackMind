@@ -90,6 +90,26 @@ export type IncidentDetail = {
   history: AuditEvent[];
 };
 
+export type DiagnosisStatus = "pending" | "succeeded" | "failed";
+export type DiagnosisErrorKind =
+  "not_configured" | "timeout" | "rate_limited" | "api_error" | "invalid_output";
+
+/** `DiagnosisOut`: the AI's suggestion for one incident (engineers and admins only). */
+export type Diagnosis = {
+  status: DiagnosisStatus;
+  model: string | null;
+  probable_cause: string | null;
+  confidence: number | null; // 0-1
+  recommended_steps: string[];
+  evidence: { metric: MetricField; observation: string }[];
+  error: DiagnosisErrorKind | null;
+  error_detail: string | null;
+  latency_ms: number | null;
+  created_at: string;
+  finished_at: string | null;
+  feedback: { helpful: number; not_helpful: number; mine: boolean | null };
+};
+
 /** `IncidentEvent`: what the live stream (`/stream`) sends when an incident changes. */
 export type IncidentEvent = {
   action: string;

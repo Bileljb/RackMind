@@ -6,7 +6,17 @@ from fastapi import FastAPI
 
 from app.core.config import get_settings
 from app.core.queue import redis_settings
-from app.routers import auth, health, incidents, metrics, racks, servers, stream, users
+from app.routers import (
+    auth,
+    diagnosis,
+    health,
+    incidents,
+    metrics,
+    racks,
+    servers,
+    stream,
+    users,
+)
 
 
 @asynccontextmanager
@@ -29,3 +39,4 @@ app.include_router(incidents.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(stream.router)
+app.include_router(diagnosis.router)

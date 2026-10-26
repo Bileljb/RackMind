@@ -45,6 +45,9 @@ services:
       SEED_PASSWORD: ${SEED_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       INGEST_API_KEY: ${INGEST_API_KEY}
+      # AI diagnosis. Empty key = feature off: incidents get a "not configured" diagnosis.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
     ports:
       - "8000:8000"
     volumes:

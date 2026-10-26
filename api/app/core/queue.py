@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Jobs are referred to by the name of the worker function that runs them.
 DETECT_JOB = "detect_anomalies"
+DIAGNOSE_JOB = "diagnose_incident"
 
 
 def redis_settings() -> RedisSettings:
