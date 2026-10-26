@@ -23,8 +23,14 @@ class Reading:
     network_mbps: float
 
 
-def make_baseline(server_id: int, rng: random.Random) -> Reading:
-    """Pick the typical values of one server, so servers differ from each other."""
+def make_baseline(server_id: int) -> Reading:
+    """Pick the typical values of one server, so servers differ from each other.
+
+    Derived from the server id only, so they are the same after every simulator restart, like
+    a real machine. Random values per start would look like every server suddenly changing,
+    and the detector (rightly) opens incidents for that.
+    """
+    rng = random.Random(f"baseline-{server_id}")
     return Reading(
         server_id=server_id,
         cpu_temp=rng.uniform(40, 50),

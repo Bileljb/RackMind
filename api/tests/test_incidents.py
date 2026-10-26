@@ -1,11 +1,18 @@
-"""Incident endpoints: lifecycle, assignment, comments, filters and audit trail."""
+"""Incident endpoints: lifecycle, assignment, comments, filters, audit trail and live events.
+
+Who may do what is tested in test_permissions.py; here each test logs in with a role allowed.
+"""
+
+from collections.abc import Callable
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Incident, IncidentStatus, Role, Server, Severity, User
-from tests.conftest import as_user
+from tests.conftest import FakeRedis
+
+Login = Callable[[Role], User]
 
 
 def make_incident(server: Server, **overrides: object) -> Incident:
@@ -27,14 +34,15 @@ async def incident(db: AsyncSession, servers: list[Server]) -> Incident:
     return incident
 
 
-async def test_full_lifecycle_is_audited(
-    client: AsyncClient, incident: Incident, users: dict[Role, User]
+async def test_full_lifecycle_is_audited_and_published(
+    client: AsyncClient, incident: Incident, login: Login, redis: FakeRedis
 ) -> None:
-    operator, engineer = users[Role.OPERATOR], users[Role.ENGINEER]
     url = f"/incidents/{incident.id}"
 
-    acked = await client.post(f"{url}/acknowledge", headers=as_user(operator))
-    resolved = await client.post(f"{url}/resolve", headers=as_user(engineer))
+    operator = login(Role.OPERATOR)
+    acked = await client.post(f"{url}/acknowledge")
+    engineer = login(Role.ENGINEER)
+    resolved = await client.post(f"{url}/resolve")
 
     assert acked.status_code == 200
     assert acked.json()["status"] == "acknowledged"
@@ -46,6 +54,8 @@ async def test_full_lifecycle_is_audited(
         ("incident.acknowledged", operator.id, {"previous": "open", "status": "acknowledged"}),
         ("incident.resolved", engineer.id, {"previous": "acknowledged", "status": "resolved"}),
     ]
+    assert redis.actions() == ["incident.acknowledged", "incident.resolved"]
+    assert {channel for channel, _ in redis.published} == {"incidents"}
 
 
 @pytest.mark.parametrize(
@@ -61,39 +71,32 @@ async def test_invalid_transitions_are_409(
     client: AsyncClient,
     db: AsyncSession,
     servers: list[Server],
-    users: dict[Role, User],
+    login: Login,
+    redis: FakeRedis,
     current: IncidentStatus,
     action: str,
 ) -> None:
     incident = make_incident(servers[0], status=current)
     db.add(incident)
     await db.commit()
+    login(Role.ENGINEER)
 
-    response = await client.post(
-        f"/incidents/{incident.id}/{action}", headers=as_user(users[Role.ENGINEER])
-    )
+    response = await client.post(f"/incidents/{incident.id}/{action}")
 
     assert response.status_code == 409
-
-
-async def test_actions_need_a_known_user(
-    client: AsyncClient, incident: Incident, users: dict[Role, User]
-) -> None:
-    url = f"/incidents/{incident.id}/acknowledge"
-
-    assert (await client.post(url)).status_code == 401
-    assert (await client.post(url, headers={"X-User-Id": "9999"})).status_code == 401
+    assert redis.published == []  # nothing changed, nothing announced
 
 
 async def test_assign_and_unassign(
-    client: AsyncClient, incident: Incident, users: dict[Role, User]
+    client: AsyncClient, incident: Incident, users: dict[Role, User], login: Login
 ) -> None:
-    admin, engineer = users[Role.ADMIN], users[Role.ENGINEER]
+    login(Role.ADMIN)
+    engineer = users[Role.ENGINEER]
     url = f"/incidents/{incident.id}/assignee"
 
-    assigned = await client.put(url, json={"assignee_id": engineer.id}, headers=as_user(admin))
-    cleared = await client.put(url, json={"assignee_id": None}, headers=as_user(admin))
-    unknown = await client.put(url, json={"assignee_id": 9999}, headers=as_user(admin))
+    assigned = await client.put(url, json={"assignee_id": engineer.id})
+    cleared = await client.put(url, json={"assignee_id": None})
+    unknown = await client.put(url, json={"assignee_id": 9999})
 
     assert assigned.json()["assignee_id"] == engineer.id
     assert cleared.json()["assignee_id"] is None
@@ -106,40 +109,45 @@ async def test_assign_and_unassign(
 
 
 async def test_resolved_incident_cannot_be_reassigned(
-    client: AsyncClient, db: AsyncSession, servers: list[Server], users: dict[Role, User]
+    client: AsyncClient,
+    db: AsyncSession,
+    servers: list[Server],
+    users: dict[Role, User],
+    login: Login,
 ) -> None:
     incident = make_incident(servers[0], status=IncidentStatus.RESOLVED)
     db.add(incident)
     await db.commit()
+    login(Role.ADMIN)
 
     response = await client.put(
-        f"/incidents/{incident.id}/assignee",
-        json={"assignee_id": users[Role.ENGINEER].id},
-        headers=as_user(users[Role.ADMIN]),
+        f"/incidents/{incident.id}/assignee", json={"assignee_id": users[Role.ENGINEER].id}
     )
 
     assert response.status_code == 409
 
 
-async def test_comments(client: AsyncClient, incident: Incident, users: dict[Role, User]) -> None:
-    operator = users[Role.OPERATOR]
+async def test_comments(
+    client: AsyncClient, incident: Incident, login: Login, redis: FakeRedis
+) -> None:
+    operator = login(Role.OPERATOR)
     url = f"/incidents/{incident.id}/comments"
 
-    created = await client.post(
-        url, json={"body": "  Fans look stuck  "}, headers=as_user(operator)
-    )
-    blank = await client.post(url, json={"body": "   "}, headers=as_user(operator))
+    created = await client.post(url, json={"body": "  Fans look stuck  "})
+    blank = await client.post(url, json={"body": "   "})
 
     assert created.status_code == 201
     assert created.json()["body"] == "Fans look stuck"
     assert blank.status_code == 422
     comments = (await client.get(f"/incidents/{incident.id}")).json()["comments"]
     assert [(c["author_id"], c["body"]) for c in comments] == [(operator.id, "Fans look stuck")]
+    assert redis.actions() == ["incident.commented"]
 
 
 async def test_recovery_suggestion_is_exposed(
-    client: AsyncClient, db: AsyncSession, incident: Incident
+    client: AsyncClient, db: AsyncSession, incident: Incident, login: Login
 ) -> None:
+    login(Role.OPERATOR)
     before = (await client.get(f"/incidents/{incident.id}")).json()["incident"]
     incident.recovered_at = incident.created_at
     await db.commit()
@@ -150,8 +158,9 @@ async def test_recovery_suggestion_is_exposed(
 
 
 async def test_list_filters_newest_first(
-    client: AsyncClient, db: AsyncSession, servers: list[Server]
+    client: AsyncClient, db: AsyncSession, servers: list[Server], login: Login
 ) -> None:
+    login(Role.OPERATOR)
     r01_a, r01_b, r02 = servers
     rows = [
         make_incident(r01_a, status=IncidentStatus.RESOLVED, severity=Severity.INFO),
@@ -176,13 +185,14 @@ async def test_list_filters_newest_first(
     assert await ids(limit=1, offset=1) == [middle]
 
 
-async def test_list_rejects_bad_filters(client: AsyncClient) -> None:
+async def test_list_rejects_bad_filters(client: AsyncClient, login: Login) -> None:
+    login(Role.OPERATOR)
     for params in ({"status": "closed"}, {"limit": 0}, {"limit": 201}):
         assert (await client.get("/incidents", params=params)).status_code == 422
 
 
-async def test_unknown_incident_is_404(client: AsyncClient, users: dict[Role, User]) -> None:
-    headers = as_user(users[Role.ADMIN])
+async def test_unknown_incident_is_404(client: AsyncClient, login: Login) -> None:
+    login(Role.ADMIN)
 
     assert (await client.get("/incidents/9999")).status_code == 404
-    assert (await client.post("/incidents/9999/acknowledge", headers=headers)).status_code == 404
+    assert (await client.post("/incidents/9999/acknowledge")).status_code == 404

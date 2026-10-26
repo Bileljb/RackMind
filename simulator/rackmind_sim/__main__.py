@@ -65,12 +65,13 @@ def build_batch(
 
 async def run(config: Config) -> None:
     rng = random.Random(config.seed)
-    async with httpx.AsyncClient(base_url=config.api_url, timeout=10) as client:
+    headers = {"X-API-Key": config.api_key}
+    async with httpx.AsyncClient(base_url=config.api_url, headers=headers, timeout=10) as client:
         servers = await wait_for_servers(client)
         if not servers:
             raise SystemExit("The API has no servers. Run the seed script first.")
         check_fault_targets(config.faults, servers)
-        baselines = {server.id: make_baseline(server.id, rng) for server in servers}
+        baselines = {server.id: make_baseline(server.id) for server in servers}
         for fault in config.faults:
             log.info("Scheduled %s at +%ss for %ss", fault, fault.start_s, fault.duration_s)
 

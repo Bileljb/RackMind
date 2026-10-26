@@ -72,3 +72,10 @@ class IncidentDetail(BaseModel):
 
 class AssigneeIn(BaseModel):
     assignee_id: int | None  # None unassigns
+
+
+class IncidentEvent(BaseModel):
+    """Pushed to live dashboards (SSE) when an incident changes, e.g. `incident.opened`."""
+
+    action: str
+    incident: IncidentOut

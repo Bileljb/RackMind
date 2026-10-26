@@ -13,6 +13,7 @@ dependencies = [
     "alembic>=1.14",
     "pwdlib[argon2]>=0.2",
     "arq>=0.28",
+    "pyjwt>=2.10",
 ]
 
 [project.optional-dependencies]

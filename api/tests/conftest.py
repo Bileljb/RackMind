@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -8,7 +9,8 @@ from sqlalchemy import URL, make_url, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.core.config import get_settings
-from app.deps import get_db, get_queue
+from app.core.security import SESSION_COOKIE, create_access_token
+from app.deps import get_db, get_redis
 from app.main import app
 from app.models import Base, Rack, Role, Server, User
 
@@ -59,36 +61,49 @@ async def db(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         await conn.rollback()
 
 
-class FakeQueue:
-    """Stands in for the Redis job queue: records jobs instead of sending them."""
+class FakeRedis:
+    """Stands in for Redis: records queued jobs and published events instead of sending them."""
 
     def __init__(self) -> None:
         self.jobs: list[tuple[str, tuple[Any, ...]]] = []
+        self.published: list[tuple[str, dict[str, Any]]] = []
 
     async def enqueue_job(self, function: str, *args: Any) -> None:
         self.jobs.append((function, args))
 
+    async def publish(self, channel: str, message: str) -> None:
+        self.published.append((channel, json.loads(message)))
+
+    def actions(self) -> list[str]:
+        """The `action` of every published event, in order."""
+        return [event["action"] for _, event in self.published]
+
 
 @pytest.fixture
-def queue() -> FakeQueue:
-    return FakeQueue()
+def redis() -> FakeRedis:
+    return FakeRedis()
 
 
 @pytest.fixture
-async def client(db: AsyncSession, queue: FakeQueue) -> AsyncIterator[AsyncClient]:
+async def client(db: AsyncSession, redis: FakeRedis) -> AsyncIterator[AsyncClient]:
     """HTTP client that calls the FastAPI app in-process, using the test session above.
 
-    The app's startup (lifespan) does not run here, so no Redis is needed: `queue` replaces it.
+    The app's startup (lifespan) does not run here, so no Redis is needed: `redis` replaces it.
+    The client starts logged out; use the `login` fixture or `INGEST_HEADERS`.
     """
 
     async def override_get_db() -> AsyncIterator[AsyncSession]:
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_queue] = lambda: queue
+    app.dependency_overrides[get_redis] = lambda: redis
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
     app.dependency_overrides.clear()
+
+
+# What the simulator sends to be allowed to push metrics.
+INGEST_HEADERS = {"X-API-Key": get_settings().ingest_api_key.get_secret_value()}
 
 
 @pytest.fixture
@@ -108,7 +123,7 @@ async def servers(db: AsyncSession) -> list[Server]:
 
 @pytest.fixture
 async def users(db: AsyncSession) -> dict[Role, User]:
-    """One active user per role (the password hash is a dummy: tests don't log in)."""
+    """One active user per role. The password hash is a dummy: tests log in with `login`."""
     by_role = {
         role: User(
             email=f"{role}@test.local", full_name=role.title(), hashed_password="x", role=role
@@ -120,9 +135,16 @@ async def users(db: AsyncSession) -> dict[Role, User]:
     return by_role
 
 
-def as_user(user: User) -> dict[str, str]:
-    """Request headers that act as `user` (temporary, until Phase 5 auth)."""
-    return {"X-User-Id": str(user.id)}
+@pytest.fixture
+def login(client: AsyncClient, users: dict[Role, User]) -> Callable[[Role], User]:
+    """`login(Role.ENGINEER)`: from now on `client` acts as that user (real signed cookie)."""
+
+    def log_in_as(role: Role) -> User:
+        user = users[role]
+        client.cookies.set(SESSION_COOKIE, create_access_token(user.id))
+        return user
+
+    return log_in_as
 
 
 def reading(server_id: int, timestamp: datetime | None = None, **overrides: Any) -> dict[str, Any]:

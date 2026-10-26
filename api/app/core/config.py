@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn, SecretStr
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     redis_url: RedisDsn
     # Only needed by the seed script; SecretStr hides the value in logs and reprs.
     seed_password: SecretStr | None = None
+
+    # Signs login tokens: anyone who knows it can forge a session. Long and random, never in git.
+    jwt_secret: SecretStr = Field(min_length=32)
+    session_minutes: int = Field(default=8 * 60, gt=0)  # one work shift, then log in again
+    # Send the session cookie over HTTPS only. Off for local http://localhost, on in production.
+    cookie_secure: bool = False
+    # Shared secret the simulator sends in `X-API-Key` to push metrics (it is not a user).
+    ingest_api_key: SecretStr = Field(min_length=16)
 
 
 @lru_cache

@@ -2,7 +2,17 @@
 
 import useSWR, { type SWRConfiguration } from "swr";
 
-import { apiGet, type Metric, type Rack, type Server } from "@/lib/api";
+import {
+  apiGet,
+  type Incident,
+  type IncidentDetail,
+  type IncidentStatus,
+  type Metric,
+  type Rack,
+  type Server,
+  type User,
+  type UserBrief,
+} from "@/lib/api";
 
 export const POLL_INTERVAL_MS = 5000;
 
@@ -12,6 +22,13 @@ const live: SWRConfiguration = { refreshInterval: POLL_INTERVAL_MS };
 
 // Inventory (racks, servers) rarely changes: fetch once per page visit.
 const stable: SWRConfiguration = { revalidateOnFocus: false };
+
+// Incidents are pushed by the live stream (see use-incident-stream.ts), which refetches
+// them the moment they change. The slow poll is only a safety net if the stream drops.
+const pushed: SWRConfiguration = { refreshInterval: 30_000 };
+
+/** Every SWR key that holds incident data starts with this, so the stream can refresh them. */
+export const INCIDENTS_KEY_PREFIX = "/incidents";
 
 export function useRacks() {
   return useSWR<Rack[]>("/racks", apiGet, stable);
@@ -43,4 +60,30 @@ export function useMetricHistory(serverId: number, minutes: number) {
     },
     live,
   );
+}
+
+/** The logged-in user. `error.status === 401` means logged out (apiGet redirects to login). */
+export function useMe() {
+  return useSWR<User>("/auth/me", apiGet, stable);
+}
+
+/** Names and roles of all users, to show "Assigned to Jane" instead of an id. */
+export function useDirectory() {
+  return useSWR<UserBrief[]>("/users/directory", apiGet, stable);
+}
+
+/** Admin only: full accounts, for the user management page. */
+export function useUsers() {
+  return useSWR<User[]>("/users", apiGet);
+}
+
+/** Incidents, newest first. An empty `statuses` list means every status. */
+export function useIncidents(statuses: IncidentStatus[] = []) {
+  const query = statuses.map((s) => `status=${s}`).join("&");
+  const key = `${INCIDENTS_KEY_PREFIX}?limit=200${query ? `&${query}` : ""}`;
+  return useSWR<Incident[]>(key, apiGet, pushed);
+}
+
+export function useIncident(incidentId: number) {
+  return useSWR<IncidentDetail>(`${INCIDENTS_KEY_PREFIX}/${incidentId}`, apiGet, pushed);
 }

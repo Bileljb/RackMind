@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.queue import DETECT_JOB
 from app.models import Metric, Server
 from app.routers.metrics import MAX_BATCH_SIZE
-from tests.conftest import FakeQueue, reading
+from tests.conftest import INGEST_HEADERS, FakeRedis, reading
+
+
+@pytest.fixture(autouse=True)
+def as_simulator(client: AsyncClient) -> None:
+    """Every request in this file comes from the simulator, with its API key."""
+    client.headers.update(INGEST_HEADERS)
 
 
 async def count_metrics(db: AsyncSession) -> int:
@@ -106,7 +112,7 @@ async def test_batch_size_limits(client: AsyncClient, servers: list[Server], siz
 
 
 async def test_ingest_queues_one_detection_job_per_request(
-    client: AsyncClient, servers: list[Server], queue: FakeQueue
+    client: AsyncClient, servers: list[Server], redis: FakeRedis
 ) -> None:
     first, second, _ = servers
     batch = [reading(second.id), reading(first.id), reading(second.id)]
@@ -115,15 +121,27 @@ async def test_ingest_queues_one_detection_job_per_request(
     await client.post("/metrics", json=reading(first.id))
 
     # Duplicate server ids are merged and sorted; one job per request.
-    assert queue.jobs == [
+    assert redis.jobs == [
         (DETECT_JOB, ([first.id, second.id],)),
         (DETECT_JOB, ([first.id],)),
     ]
 
 
 async def test_rejected_batch_queues_nothing(
-    client: AsyncClient, servers: list[Server], queue: FakeQueue
+    client: AsyncClient, servers: list[Server], redis: FakeRedis
 ) -> None:
     await client.post("/metrics/batch", json=[reading(servers[0].id), reading(9999)])
 
-    assert queue.jobs == []
+    assert redis.jobs == []
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-API-Key": "wrong-key-of-enough-length"}])
+async def test_ingest_requires_the_api_key(
+    client: AsyncClient, db: AsyncSession, servers: list[Server], headers: dict[str, str]
+) -> None:
+    client.headers.pop("X-API-Key")
+
+    response = await client.post("/metrics", json=reading(servers[0].id), headers=headers)
+
+    assert response.status_code == 401
+    assert await count_metrics(db) == 0

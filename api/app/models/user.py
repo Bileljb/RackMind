@@ -11,6 +11,11 @@ class Role(StrEnum):
     ENGINEER = "engineer"
     ADMIN = "admin"
 
+    @property
+    def rank(self) -> int:
+        """0, 1, 2: each role can do everything the roles below it can."""
+        return list(Role).index(self)
+
 
 class User(TimestampMixin, Base):
     __tablename__ = "users"

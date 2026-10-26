@@ -27,7 +27,8 @@ async def detect_anomalies(ctx: JobContext, server_ids: list[int]) -> None:
     Queued by the API after every metrics batch (see `request_detection`).
     """
     async with SessionFactory() as db:
-        await run_detection(db, server_ids)
+        # ctx["redis"] is the worker's own Redis connection, reused to publish live events.
+        await run_detection(db, ctx["redis"], server_ids)
 
 
 async def shutdown(ctx: JobContext) -> None:

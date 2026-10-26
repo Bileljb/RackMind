@@ -36,12 +36,15 @@ services:
       sh -c "alembic upgrade head &&
              python -m app.seed &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    environment:
+    # `&api-env` names this block so the worker can reuse it below with `*api-env`.
+    environment: &api-env
       ENVIRONMENT: development
       # Inside the Compose network, services reach each other by service name (`db`, `redis`).
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       SEED_PASSWORD: ${SEED_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      INGEST_API_KEY: ${INGEST_API_KEY}
     ports:
       - "8000:8000"
     volumes:
@@ -66,10 +69,7 @@ services:
     command: >
       arq app.workers.main.WorkerSettings --watch app
       --custom-log-dict app.workers.main.LOG_CONFIG
-    environment:
-      ENVIRONMENT: development
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
+    environment: *api-env
     volumes:
       - ./api:/app
     depends_on:
@@ -81,6 +81,7 @@ services:
     build: ./simulator
     environment:
       SIM_API_URL: http://api:8000
+      SIM_API_KEY: ${INGEST_API_KEY}
       SIM_INTERVAL_S: 5
       # Fault schedule, e.g. "overheat:R02:60:600,memory_leak:r03-srv02:30:900". Empty = all normal.
       SIM_FAULTS: ${SIM_FAULTS:-}

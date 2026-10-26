@@ -1,10 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import AwareDatetime
 from sqlalchemy import select
 
-from app.deps import DbSession
+from app.deps import DbSession, Operator, require_user_or_ingest_key
 from app.models import Server
 from app.schemas.inventory import ServerOut
 from app.schemas.metric import MetricOut
@@ -17,7 +17,8 @@ MAX_HISTORY_WINDOW = timedelta(hours=24)
 router = APIRouter(prefix="/servers", tags=["inventory"])
 
 
-@router.get("")
+# Inventory: read by people and by the simulator (API key).
+@router.get("", dependencies=[Depends(require_user_or_ingest_key)])
 async def list_servers(db: DbSession, rack_id: int | None = None) -> list[ServerOut]:
     stmt = select(Server).order_by(Server.rack_id, Server.rack_unit)
     if rack_id is not None:
@@ -26,7 +27,7 @@ async def list_servers(db: DbSession, rack_id: int | None = None) -> list[Server
     return [ServerOut.model_validate(server) for server in servers]
 
 
-@router.get("/{server_id}")
+@router.get("/{server_id}", dependencies=[Depends(require_user_or_ingest_key)])
 async def get_server(server_id: int, db: DbSession) -> ServerOut:
     server = await db.get(Server, server_id)
     if server is None:
@@ -38,6 +39,7 @@ async def get_server(server_id: int, db: DbSession) -> ServerOut:
 async def server_metric_history(
     server_id: int,
     db: DbSession,
+    _: Operator,
     start: AwareDatetime | None = None,
     end: AwareDatetime | None = None,
 ) -> list[MetricOut]:

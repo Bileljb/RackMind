@@ -14,9 +14,10 @@ from rackmind_sim.faults import Fault, parse_fault
 @dataclass(frozen=True)
 class Config:
     api_url: str
+    api_key: str  # sent as X-API-Key: the API only accepts metrics from holders of this key
     interval_s: float
     faults: list[Fault]
-    seed: int | None  # same seed -> same baselines and noise, handy to reproduce a demo
+    seed: int | None  # same seed -> same noise, handy to reproduce a demo
 
 
 def _fault_arg(spec: str) -> Fault:
@@ -34,6 +35,7 @@ def _env_faults() -> list[Fault]:
 def parse_config(argv: list[str] | None = None) -> Config:
     parser = argparse.ArgumentParser(prog="rackmind_sim", description=__doc__)
     parser.add_argument("--api-url", default=os.environ.get("SIM_API_URL", "http://localhost:8000"))
+    parser.add_argument("--api-key", default=os.environ.get("SIM_API_KEY", ""))
     parser.add_argument(
         "--interval", type=float, default=float(os.environ.get("SIM_INTERVAL_S", "5"))
     )
@@ -49,6 +51,7 @@ def parse_config(argv: list[str] | None = None) -> Config:
     args = parser.parse_args(argv)
     return Config(
         api_url=args.api_url,
+        api_key=args.api_key,
         interval_s=args.interval,
         faults=args.faults if args.faults is not None else _env_faults(),
         seed=args.seed,

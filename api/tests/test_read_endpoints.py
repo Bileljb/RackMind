@@ -1,9 +1,18 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from httpx import AsyncClient
 
-from app.models import Server
-from tests.conftest import reading
+from app.models import Role, Server, User
+from tests.conftest import INGEST_HEADERS, reading
+
+
+@pytest.fixture(autouse=True)
+def logged_in(client: AsyncClient, login: Callable[[Role], User]) -> None:
+    """An operator browses; the simulator key is set too, to post the test readings."""
+    login(Role.OPERATOR)
+    client.headers.update(INGEST_HEADERS)
 
 
 def parse_time(value: str) -> datetime:

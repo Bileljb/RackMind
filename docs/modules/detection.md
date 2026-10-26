@@ -15,7 +15,7 @@
   - `POST /incidents/{id}/acknowledge` and `POST /incidents/{id}/resolve`.
   - `PUT /incidents/{id}/assignee` with `{"assignee_id": 3}` (`null` unassigns).
   - `POST /incidents/{id}/comments` with `{"body": "..."}`.
-- **Who is acting (temporary):** until Phase 5, write endpoints read an `X-User-Id` header (`get_current_user` in `app/deps.py`). It is not secure. Phase 5 replaces only that function with the JWT cookie.
+- **Who is acting:** the logged-in user from the session cookie (see `auth-and-realtime.md`). Operators can acknowledge and comment; resolving and assigning need an engineer.
 - **Known limits (good interview material):**
   - A rack-wide fault opens one incident per affected server, because nothing correlates them by rack.
   - The z-score slowly "gets used to" a fault that lasts longer than its 30-minute baseline, so a long power or network anomaly can end up looking normal. Fixed thresholds don't have this problem.

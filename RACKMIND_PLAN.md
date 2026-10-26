@@ -181,17 +181,17 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 
 **Learn:** SSE, Redis pub/sub, JWT with httpOnly cookies, Next.js middleware, RBAC.
 
-- [ ] Registration disabled for public, admin creates users
-- [ ] Login/logout, password hashing, JWT in httpOnly cookie
-- [ ] Role guard dependencies in FastAPI (`require_role(...)`)
-- [ ] Enforce permissions on all endpoints (API first)
-- [ ] Redis pub/sub publishing on new incident / state change
-- [ ] `GET /stream` SSE endpoint, authenticated
-- [ ] Next.js: login page, middleware protecting routes, `EventSource` live incident feed
-- [ ] UI hides actions the role cannot perform
-- [ ] Admin user management page
-- [ ] Permission tests (each role vs each sensitive endpoint)
-- [ ] `docs/modules/auth-and-realtime.md` note
+- [x] Registration disabled for public, admin creates users
+- [x] Login/logout, password hashing, JWT in httpOnly cookie
+- [x] Role guard dependencies in FastAPI (`require_role(...)`)
+- [x] Enforce permissions on all endpoints (API first)
+- [x] Redis pub/sub publishing on new incident / state change
+- [x] `GET /stream` SSE endpoint, authenticated
+- [x] Next.js: login page, middleware protecting routes, `EventSource` live incident feed
+- [x] UI hides actions the role cannot perform
+- [x] Admin user management page
+- [x] Permission tests (each role vs each sensitive endpoint)
+- [x] `docs/modules/auth-and-realtime.md` note
 
 **Done when:** each role can do only what it should, and incidents appear live without refreshing.
 

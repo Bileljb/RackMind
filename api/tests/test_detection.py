@@ -1,5 +1,6 @@
 """Detection against the database: findings become incidents, deduplicated per server."""
 
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 import pytest
@@ -9,7 +10,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditLog, Incident, IncidentStatus, Metric, Server, Severity
 from app.services.detection import run_detection
+from tests.conftest import FakeRedis
 from tests.factories import ramp, series
+
+Feed = Callable[[Server, list[Metric]], Awaitable[None]]
+
+
+@pytest.fixture
+def feed(db: AsyncSession, redis: FakeRedis) -> Feed:
+    """`await feed(server, readings)`: store readings, then detect, like the worker per batch."""
+
+    async def store_and_detect(server: Server, readings: list[Metric]) -> None:
+        db.add_all(readings)
+        await db.commit()
+        await run_detection(db, redis, [server.id])  # type: ignore[arg-type]
+
+    return store_and_detect
 
 
 async def incidents_of(db: AsyncSession, server: Server) -> list[Incident]:
@@ -22,13 +38,6 @@ async def audit_actions(db: AsyncSession, incident: Incident) -> list[str]:
     return list(await db.scalars(stmt))
 
 
-async def feed(db: AsyncSession, server: Server, readings: list[Metric]) -> None:
-    """Store readings, then run detection like the worker does after each batch."""
-    db.add_all(readings)
-    await db.commit()
-    await run_detection(db, [server.id])
-
-
 def split(readings: list[Metric], *minutes: float) -> list[list[Metric]]:
     """Cut a series into consecutive chunks ending at these minutes (5s readings)."""
     cuts = [int(m * 12) for m in minutes]
@@ -36,7 +45,7 @@ def split(readings: list[Metric], *minutes: float) -> list[list[Metric]]:
 
 
 async def test_one_fault_opens_exactly_one_incident(
-    db: AsyncSession, servers: list[Server]
+    db: AsyncSession, servers: list[Server], feed: Feed, redis: FakeRedis
 ) -> None:
     server = servers[0]
     # A disk at 80% starts filling at minute 25: warning soon, critical (>= 95%) by minute 30.
@@ -45,7 +54,7 @@ async def test_one_fault_opens_exactly_one_incident(
     )
 
     for chunk in split(readings, 24, 26, 27, 28, 29, 30):
-        await feed(db, server, chunk)
+        await feed(server, chunk)
 
     [incident] = await incidents_of(db, server)
     assert incident.metric_name == "disk_used_pct"
@@ -55,16 +64,22 @@ async def test_one_fault_opens_exactly_one_incident(
     actions = await audit_actions(db, incident)
     assert actions[0] == "incident.opened"
     assert set(actions[1:]) == {"incident.severity_raised"}
+    # Live dashboards heard the same story, once per change.
+    assert redis.actions() == actions
+    assert redis.published[-1][1]["incident"]["severity"] == "critical"
 
 
-async def test_normal_readings_open_nothing(db: AsyncSession, servers: list[Server]) -> None:
-    await feed(db, servers[0], series(servers[0].id, 30))
+async def test_normal_readings_open_nothing(
+    db: AsyncSession, servers: list[Server], feed: Feed, redis: FakeRedis
+) -> None:
+    await feed(servers[0], series(servers[0].id, 30))
 
     assert await incidents_of(db, servers[0]) == []
+    assert redis.published == []
 
 
 async def test_recovery_is_suggested_then_withdrawn_if_the_fault_returns(
-    db: AsyncSession, servers: list[Server]
+    db: AsyncSession, servers: list[Server], feed: Feed, redis: FakeRedis
 ) -> None:
     server = servers[0]
 
@@ -75,33 +90,33 @@ async def test_recovery_is_suggested_then_withdrawn_if_the_fault_returns(
     readings = series(server.id, 30, fault=hot_spell)
     before, during, after = split(readings, 26, 28)
 
-    await feed(db, server, before + during)
+    await feed(server, before + during)
     [incident] = await incidents_of(db, server)
     assert incident.recovered_at is None
 
-    await feed(db, server, after)
+    await feed(server, after)
     [incident] = await incidents_of(db, server)
     assert incident.recovered_at == after[-1].timestamp
     assert incident.status is IncidentStatus.OPEN  # only a suggestion: still open
 
     # Hot again: the suggestion is withdrawn, and it is still the same single incident.
     next_minute = after[-1].timestamp + timedelta(minutes=1)
-    await feed(db, server, series(server.id, 1, base={"cpu_temp": 85}, end=next_minute))
+    await feed(server, series(server.id, 1, base={"cpu_temp": 85}, end=next_minute))
     [incident] = await incidents_of(db, server)
     assert incident.recovered_at is None
+    assert redis.actions() == ["incident.opened", "incident.recovered", "incident.relapsed"]
 
 
 async def test_a_resolved_incident_lets_a_new_fault_open_a_new_one(
-    db: AsyncSession, servers: list[Server]
+    db: AsyncSession, servers: list[Server], feed: Feed
 ) -> None:
     server = servers[0]
-    hot = series(server.id, 1, base={"cpu_temp": 85})
-    await feed(db, server, hot)
+    await feed(server, series(server.id, 1, base={"cpu_temp": 85}))
     [first] = await incidents_of(db, server)
     first.status = IncidentStatus.RESOLVED
     await db.commit()
 
-    await feed(db, server, [])  # same hot readings, judged again
+    await feed(server, [])  # same hot readings, judged again
 
     assert [i.status for i in await incidents_of(db, server)] == [
         IncidentStatus.RESOLVED,
@@ -109,13 +124,15 @@ async def test_a_resolved_incident_lets_a_new_fault_open_a_new_one(
     ]
 
 
-async def test_each_server_gets_its_own_incident(db: AsyncSession, servers: list[Server]) -> None:
+async def test_each_server_gets_its_own_incident(
+    db: AsyncSession, servers: list[Server], redis: FakeRedis
+) -> None:
     for server in servers[:2]:
         db.add_all(series(server.id, 1, base={"cpu_temp": 85}))
     db.add_all(series(servers[2].id, 1))
     await db.commit()
 
-    await run_detection(db, [s.id for s in servers])
+    await run_detection(db, redis, [s.id for s in servers])  # type: ignore[arg-type]
 
     assert [len(await incidents_of(db, s)) for s in servers] == [1, 1, 0]
 
