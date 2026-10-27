@@ -223,18 +223,18 @@ The owner is a full stack developer (React, Node/Express/TypeScript, PostgreSQL/
 
 **Learn:** GitHub Actions, AWS basics (EC2, security groups, IAM, optionally RDS and S3), HTTPS basics.
 
-- [ ] GitHub Actions: lint + tests on every push
-- [ ] Production Docker Compose / images (no dev flags, no hot reload)
+- [x] GitHub Actions: lint + tests on every push
+- [x] Production Docker Compose / images (no dev flags, no hot reload)
 - [ ] Launch EC2 instance, configure security groups, SSH key access
 - [ ] Deploy with Docker Compose, environment variables via `.env` on the server
 - [ ] Domain or public URL, HTTPS (reverse proxy such as Caddy or Nginx)
 - [ ] Optional: move Postgres to RDS, backups to S3
-- [ ] Demo seed data and a demo user per role
-- [ ] README: overview, screenshot/GIF, architecture diagram, setup in one command, decisions and trade-offs, limits (simulated data), roadmap
+- [x] Demo seed data and a demo user per role
+- [ ] README: overview, screenshot/GIF, architecture diagram, setup in one command, decisions and trade-offs, limits (simulated data), roadmap (all done except the screenshot/GIF and live links)
 - [ ] 2-minute demo video (fault injected, incident appears live, AI diagnosis, role difference)
 - [ ] Portfolio page for Rackmind (description, links, video, repo)
 - [ ] Share the project publicly (pin the repo on GitHub, post on LinkedIn with the demo video)
-- [ ] Final pass: remove dead code, check no secrets in git history
+- [x] Final pass: remove dead code, check no secrets in git history
 
 **Done when:** live URL works, one-command local setup works, README and video are finished, and the project is shared publicly.
 
@@ -255,9 +255,9 @@ Cut in this order:
 ## 7. Definition of Done (Whole Project)
 
 - [ ] Live deployed URL
-- [ ] `docker compose up` runs everything locally
+- [x] `docker compose up` runs everything locally
 - [ ] Tests for detector, permissions, and AI failure handling pass in CI
-- [ ] Architecture diagram and "decisions and trade-offs" section in README
+- [x] Architecture diagram and "decisions and trade-offs" section in README
 - [ ] 2-minute demo video
 - [ ] Portfolio page published
 - [ ] Owner can explain every module, the async design, DB session handling, the detector, and how LLM output is validated

@@ -1,0 +1,120 @@
+# Production stack. On the server:
+#   cp .env.example .env   # then fill in real secrets, DOMAIN and COOKIE_SECURE=true
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Differences from docker-compose.yml (dev): images are built from the `prod` targets (no
+# hot reload, no test tools, no source mounts, non-root users), only Caddy is reachable from
+# outside (ports 80/443, automatic HTTPS), and every service restarts if it crashes.
+
+# Own project name, so its containers and database volume never mix with the dev stack's.
+name: rackmind-prod
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: { context: ./api, target: prod }
+    restart: unless-stopped
+    # The image's default command migrates, seeds, then starts uvicorn (see api/Dockerfile).
+    environment: &api-env
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      SEED_PASSWORD: ${SEED_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      INGEST_API_KEY: ${INGEST_API_KEY}
+      SESSION_MINUTES: ${SESSION_MINUTES:-480}
+      # The site is served over HTTPS by Caddy, so the session cookie can be HTTPS-only.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    build: { context: ./api, target: prod }
+    restart: unless-stopped
+    command: >
+      arq app.workers.main.WorkerSettings
+      --custom-log-dict app.workers.main.LOG_CONFIG
+    environment: *api-env
+    depends_on:
+      api:
+        condition: service_healthy
+
+  simulator:
+    build: { context: ./simulator, target: prod }
+    restart: unless-stopped
+    environment:
+      SIM_API_URL: http://api:8000
+      SIM_API_KEY: ${INGEST_API_KEY}
+      SIM_INTERVAL_S: 5
+      # Times count from the simulator's start; `docker compose restart simulator` replays them.
+      SIM_FAULTS: ${SIM_FAULTS:-}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      target: prod
+      args:
+        API_URL: http://api:8000
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      # Your domain (its DNS A record must point at this server) for a real HTTPS certificate.
+      # `localhost` serves a locally-trusted certificate, handy to try this stack on your machine.
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep them, or Let's Encrypt rate limits can bite
+      - caddy-config:/config
+    depends_on:
+      - web
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

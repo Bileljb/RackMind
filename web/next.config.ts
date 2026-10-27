@@ -4,6 +4,12 @@ import type { NextConfig } from "next";
 const apiUrl = process.env.API_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // `next build` also writes a self-contained server to .next/standalone (used by the
+  // production Docker image), so the image doesn't need a full node_modules install.
+  output: "standalone",
+  // Compression happens in the reverse proxy (Caddy) in production. Next's own gzip could
+  // buffer the /api/stream Server-Sent Events, delaying live updates.
+  compress: false,
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

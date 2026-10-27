@@ -1,4 +1,5 @@
-# Local development stack. Run with: docker compose up --build
+# Local development stack (hot reload). Run with: docker compose up --build
+# Production stack: docker-compose.prod.yml.
 # Values like ${POSTGRES_USER} are read from the `.env` file next to this file.
 
 services:
@@ -29,7 +30,7 @@ services:
       retries: 10
 
   api:
-    build: ./api
+    build: { context: ./api, target: dev }
     # On every start: apply migrations, seed demo data (skipped if already present),
     # then run the server with --reload so code changes restart it automatically.
     command: >
@@ -68,7 +69,7 @@ services:
   worker:
     # Same image and code as the API, but runs the ARQ worker instead of the web server.
     # --watch restarts the worker when files under app/ change (like uvicorn's --reload).
-    build: ./api
+    build: { context: ./api, target: dev }
     command: >
       arq app.workers.main.WorkerSettings --watch app
       --custom-log-dict app.workers.main.LOG_CONFIG
@@ -81,7 +82,7 @@ services:
         condition: service_healthy
 
   simulator:
-    build: ./simulator
+    build: { context: ./simulator, target: dev }
     environment:
       SIM_API_URL: http://api:8000
       SIM_API_KEY: ${INGEST_API_KEY}
@@ -96,7 +97,7 @@ services:
         condition: service_healthy
 
   web:
-    build: ./web
+    build: { context: ./web, target: dev }
     environment:
       # Used by next.config.ts: the Next.js server proxies /api/* to FastAPI on this address.
       API_URL: http://api:8000

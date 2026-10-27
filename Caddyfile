@@ -1,0 +1,18 @@
+# Reverse proxy for docker-compose.prod.yml. Caddy gets and renews the HTTPS certificate
+# for {$DOMAIN} on its own and redirects http:// to https://.
+# Everything goes to the Next.js server, which itself proxies /api/* to FastAPI.
+
+{$DOMAIN} {
+	# Compress everything except the live event stream: compressing SSE would buffer events.
+	@compressible not path /api/stream
+	encode @compressible zstd gzip
+
+	reverse_proxy web:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

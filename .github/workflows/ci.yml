@@ -1,0 +1,103 @@
+# Lint, type-check and test every part of the repo on each push and pull request.
+# The three jobs run in parallel; the run fails if any of them fails.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch cancels the run still going for the older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    # The tests talk to a real Postgres (they create a separate `rackmind_test` database).
+    # Redis is replaced by a fake in the tests, so it isn't needed here.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rackmind
+          POSTGRES_PASSWORD: rackmind
+          POSTGRES_DB: rackmind
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rackmind"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+asyncpg://rackmind:rackmind@localhost:5432/rackmind
+      REDIS_URL: redis://localhost:6379/0
+      # Throwaway values that only exist in CI; the settings require them to be present.
+      JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else
+      INGEST_API_KEY: ci-only-ingest-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Format
+        run: ruff format --check .
+      - name: Type-check
+        run: mypy
+      - name: Test
+        run: pytest
+
+  simulator:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: simulator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: simulator/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Format
+        run: ruff format --check .
+      - name: Type-check
+        run: mypy
+      - name: Test
+        run: pytest
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # `npm install`, not `npm ci`: see the note in web/Dockerfile about the Windows lockfile.
+      - run: npm install --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Format
+        run: npm run format:check
+      - name: Type-check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
