@@ -32,7 +32,8 @@ export function MetricChart({ spec, metrics }: { spec: MetricSpec; metrics: Metr
     time: new Date(m.timestamp).getTime(),
     value: m[spec.field],
   }));
-  const latest = points.at(-1)?.value;
+  // A missing value (null) leaves a gap in the line rather than dropping to zero.
+  const latest = points.findLast((p) => p.value !== null)?.value ?? undefined;
 
   return (
     <figure className="rounded-xl border border-line bg-surface p-4">

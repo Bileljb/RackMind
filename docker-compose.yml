@@ -49,6 +49,7 @@ services:
       # AI diagnosis. Empty key = feature off: incidents get a "not configured" diagnosis.
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      HEARTBEAT_TIMEOUT_S: ${HEARTBEAT_TIMEOUT_S:-60}
     ports:
       - "8000:8000"
     volumes:
@@ -87,8 +88,9 @@ services:
       SIM_API_URL: http://api:8000
       SIM_API_KEY: ${INGEST_API_KEY}
       SIM_INTERVAL_S: 5
-      # Fault schedule, e.g. "overheat:R02:60:600,memory_leak:r03-srv02:30:900". Empty = all normal.
-      SIM_FAULTS: ${SIM_FAULTS:-}
+      # The Simulation-mode demo. Times count from when someone switches to Simulation mode,
+      # and replay from zero each time it starts again. The CPU spike gives an incident in ~1 min.
+      SIM_FAULTS: ${SIM_FAULTS:-cpu_spike:r02-srv03:20:240,memory_leak:r03-srv02:60:900,overheat:R04:120:600,disk_fill:r01-srv03:180:900}
     volumes:
       # Code is mounted like the API's; after editing, run `docker compose restart simulator`.
       - ./simulator:/app

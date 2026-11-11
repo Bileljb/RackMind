@@ -41,8 +41,12 @@ async def list_incidents(db: AsyncSession, filters: IncidentFilters) -> list[Inc
         stmt = stmt.where(Incident.severity.in_(filters.severity))
     if filters.server_id is not None:
         stmt = stmt.where(Incident.server_id == filters.server_id)
+    if filters.rack_id is not None or filters.source is not None:
+        stmt = stmt.join(Server)
     if filters.rack_id is not None:
-        stmt = stmt.join(Server).where(Server.rack_id == filters.rack_id)
+        stmt = stmt.where(Server.rack_id == filters.rack_id)
+    if filters.source is not None:
+        stmt = stmt.where(Server.source == filters.source)
     stmt = stmt.order_by(Incident.created_at.desc(), Incident.id.desc())
     return list(await db.scalars(stmt.limit(filters.limit).offset(filters.offset)))
 

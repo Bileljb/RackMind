@@ -6,14 +6,16 @@ import { useState } from "react";
 import { BandBadge } from "@/components/band-badge";
 import { MetricChart, type MetricSpec } from "@/components/metric-chart";
 import { ErrorPanel, LiveIndicator, Skeleton, StaleBanner } from "@/components/states";
-import { ApiError, type Metric } from "@/lib/api";
+import { ApiError, type Metric, type Server } from "@/lib/api";
+import { bandOf } from "@/lib/bands";
+import { formatAgo } from "@/lib/format";
 import { POLL_INTERVAL_MS, useMetricHistory, useRacks, useServer } from "@/lib/hooks";
-import { tempBand } from "@/lib/temperature";
 import { useNow } from "@/lib/use-now";
 
 const METRICS: MetricSpec[] = [
   { field: "cpu_temp", title: "CPU temperature", unit: "°C" },
   { field: "power_w", title: "Power draw", unit: "W" },
+  { field: "cpu_usage_pct", title: "CPU usage", unit: "%", domain: [0, 100] },
   { field: "memory_used_pct", title: "Memory used", unit: "%", domain: [0, 100] },
   { field: "disk_used_pct", title: "Disk used", unit: "%", domain: [0, 100] },
   { field: "network_mbps", title: "Network", unit: "Mbps" },
@@ -47,6 +49,9 @@ export function ServerDetail({ serverId }: { serverId: number }) {
   const rack = racks.data?.find((r) => r.id === server.data?.rack_id);
   const metrics = history.data ?? [];
   const latest = metrics.at(-1);
+  const band = bandOf(latest, now);
+  // Only the metrics this server reports: a VPS has no temperature or power sensor.
+  const shown = metrics.length ? METRICS.filter((spec) => reports(metrics, spec)) : METRICS;
 
   return (
     <>
@@ -64,8 +69,10 @@ export function ServerDetail({ serverId }: { serverId: number }) {
                 Rack {rack.name} · U{server.data.rack_unit} · {rack.location}
               </span>
             )}
-            {history.data && (
-              <BandBadge band={tempBand(latest?.cpu_temp, latest?.timestamp, now)} />
+            {server.data && <SourceBadge source={server.data.source} />}
+            {history.data && <BandBadge band={band} />}
+            {server.data?.source === "agent" && band === "stale" && latest && now !== null && (
+              <span>Not reporting · last seen {formatAgo(latest.timestamp, now)}</span>
             )}
           </p>
         </div>
@@ -86,11 +93,11 @@ export function ServerDetail({ serverId }: { serverId: number }) {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {METRICS.map((spec) => (
+            {shown.map((spec) => (
               <MetricChart key={spec.field} spec={spec} metrics={metrics} />
             ))}
           </div>
-          <RecentReadings metrics={metrics} />
+          <RecentReadings metrics={metrics} specs={shown} />
         </>
       )}
     </>
@@ -120,7 +127,7 @@ function RangePicker({ value, onChange }: { value: number; onChange: (minutes: n
 }
 
 /** The same data as the charts, as text: readable without hovering, and by screen readers. */
-function RecentReadings({ metrics }: { metrics: Metric[] }) {
+function RecentReadings({ metrics, specs }: { metrics: Metric[]; specs: MetricSpec[] }) {
   const rows = metrics.slice(-TABLE_ROWS).reverse();
   if (rows.length === 0) return null;
   return (
@@ -133,7 +140,7 @@ function RecentReadings({ metrics }: { metrics: Metric[] }) {
           <thead className="text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2 font-medium">Time</th>
-              {METRICS.map((spec) => (
+              {specs.map((spec) => (
                 <th key={spec.field} className="px-4 py-2 text-right font-medium">
                   {spec.title} ({spec.unit})
                 </th>
@@ -146,9 +153,9 @@ function RecentReadings({ metrics }: { metrics: Metric[] }) {
                 <td className="px-4 py-2 text-ink-2">
                   {new Date(m.timestamp).toLocaleTimeString()}
                 </td>
-                {METRICS.map((spec) => (
+                {specs.map((spec) => (
                   <td key={spec.field} className="px-4 py-2 text-right">
-                    {m[spec.field].toFixed(1)}
+                    {m[spec.field]?.toFixed(1) ?? "—"}
                   </td>
                 ))}
               </tr>
@@ -157,6 +164,18 @@ function RecentReadings({ metrics }: { metrics: Metric[] }) {
         </table>
       </div>
     </details>
+  );
+}
+
+function reports(metrics: Metric[], spec: MetricSpec): boolean {
+  return metrics.some((m) => m[spec.field] !== null);
+}
+
+function SourceBadge({ source }: { source: Server["source"] }) {
+  return (
+    <span className="rounded-full border border-line px-2 py-0.5 text-xs text-ink-2">
+      {source === "agent" ? "Real server" : "Simulated"}
+    </span>
   );
 }
 

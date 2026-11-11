@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from app.core.queue import request_detection
 from app.deps import DbSession, Operator, Redis, require_ingest_key
+from app.models import ServerSource
 from app.schemas.metric import BatchResult, MetricIn, MetricOut
 from app.services import metrics as metrics_service
 from app.services.metrics import UnknownServersError
@@ -49,7 +50,9 @@ async def ingest_batch(
 
 
 @router.get("/latest")
-async def latest(db: DbSession, _: Operator, rack_id: int | None = None) -> list[MetricOut]:
-    """Newest reading of every server, optionally only for one rack (dashboard heatmap)."""
-    rows = await metrics_service.latest_metrics(db, rack_id)
+async def latest(
+    db: DbSession, _: Operator, rack_id: int | None = None, source: ServerSource | None = None
+) -> list[MetricOut]:
+    """Newest reading of every server, optionally only for one rack or source (dashboard)."""
+    rows = await metrics_service.latest_metrics(db, rack_id=rack_id, source=source)
     return [MetricOut.model_validate(row) for row in rows]

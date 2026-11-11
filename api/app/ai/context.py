@@ -27,6 +27,7 @@ NOTE_MAX_CHARS = 300
 UNITS = {
     "cpu_temp": "°C",
     "power_w": "W",
+    "cpu_usage_pct": "%",
     "disk_used_pct": "%",
     "memory_used_pct": "%",
     "network_mbps": "Mbps",
@@ -47,6 +48,7 @@ class NeighbourServer(BaseModel):
     hostname: str
     cpu_temp: float | None
     power_w: float | None
+    cpu_usage_pct: float | None
     active_incident: str | None
 
 
@@ -118,17 +120,24 @@ async def build_context(db: AsyncSession, incident: Incident) -> DiagnosisContex
 
 
 def summarize(readings: Sequence[Metric], window_start: datetime) -> dict[str, MetricSummary]:
-    """Per metric: baseline, extremes and per-minute averages. `readings` oldest first."""
-    if not readings:
-        return {}
+    """Per metric: baseline, extremes and per-minute averages. `readings` oldest first.
+
+    Metrics the server doesn't report (no value in the window) are left out, so the model
+    isn't shown empty data it might misread as "zero".
+    """
     baseline_end = window_start + BASELINE_PART
     summaries = {}
     for name in METRIC_NAMES:
-        values = [getattr(r, name) for r in readings]
-        baseline = [getattr(r, name) for r in readings if r.timestamp < baseline_end]
+        reported = [
+            (r.timestamp, value) for r in readings if (value := getattr(r, name)) is not None
+        ]
+        if not reported:
+            continue
+        values = [value for _, value in reported]
+        baseline = [value for timestamp, value in reported if timestamp < baseline_end]
         minutes: dict[int, list[float]] = {}
-        for reading, value in zip(readings, values, strict=True):
-            minute = int((reading.timestamp - window_start).total_seconds() // 60)
+        for timestamp, value in reported:
+            minute = int((timestamp - window_start).total_seconds() // 60)
             minutes.setdefault(minute, []).append(value)
         summaries[name] = MetricSummary(
             unit=UNITS[name],
@@ -197,12 +206,19 @@ async def _neighbours(db: AsyncSession, server: Server, at: datetime) -> list[Ne
     return [
         NeighbourServer(
             hostname=other.hostname,
-            cpu_temp=round(latest[other.id].cpu_temp, 1) if other.id in latest else None,
-            power_w=round(latest[other.id].power_w, 1) if other.id in latest else None,
+            cpu_temp=_rounded(latest.get(other.id), "cpu_temp"),
+            power_w=_rounded(latest.get(other.id), "power_w"),
+            cpu_usage_pct=_rounded(latest.get(other.id), "cpu_usage_pct"),
             active_incident=active.get(other.id),
         )
         for other in others
     ]
+
+
+def _rounded(reading: Metric | None, metric: str) -> float | None:
+    """One value of a reading, rounded; None if there is no reading or it lacks this metric."""
+    value = getattr(reading, metric) if reading is not None else None
+    return round(value, 1) if value is not None else None
 
 
 async def _similar_incidents(

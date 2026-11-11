@@ -7,7 +7,7 @@ from app.models.diagnosis import Diagnosis, DiagnosisError, DiagnosisFeedback, D
 from app.models.incident import Incident, IncidentStatus, Severity
 from app.models.metric import Metric
 from app.models.rack import Rack
-from app.models.server import Server
+from app.models.server import Server, ServerSource
 from app.models.user import Role, User
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "Rack",
     "Role",
     "Server",
+    "ServerSource",
     "Severity",
     "User",
 ]

@@ -43,6 +43,9 @@ ENDPOINTS = [
     Endpoint("GET", "/incidents/{incident}/diagnosis", Role.ENGINEER),
     Endpoint("POST", "/incidents/{incident}/diagnosis", Role.ENGINEER),
     Endpoint("PUT", "/incidents/{incident}/diagnosis/feedback", Role.ENGINEER, {"helpful": True}),
+    Endpoint("GET", "/simulation/status", Role.OPERATOR),
+    Endpoint("POST", "/simulation/keepalive", Role.OPERATOR),
+    Endpoint("DELETE", "/simulation/keepalive", Role.OPERATOR),
     Endpoint("GET", "/users/directory", Role.OPERATOR),
     Endpoint("GET", "/users", Role.ADMIN),
     Endpoint(
@@ -117,5 +120,7 @@ async def test_simulator_key_reads_inventory_but_not_incidents(
 
     assert (await client.get("/servers")).status_code == 200
     assert (await client.get("/racks")).status_code == 200
+    assert (await client.get("/simulation/status")).status_code == 200
+    assert (await client.post("/simulation/keepalive")).status_code == 401
     assert (await client.get("/incidents")).status_code == 401
     assert (await client.get("/metrics/latest")).status_code == 401

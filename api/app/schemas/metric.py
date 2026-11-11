@@ -18,8 +18,10 @@ class MetricIn(BaseModel):
     # AwareDatetime rejects timestamps without a timezone ("2026-10-25T10:00:00"),
     # which would be ambiguous. Clients should send UTC, e.g. "2026-10-25T10:00:00Z".
     timestamp: AwareDatetime
-    cpu_temp: float = Field(ge=-20, le=150, description="Degrees Celsius")
-    power_w: NonNegative
+    # Optional: most real servers (VPSes) have no temperature or power sensor.
+    cpu_temp: float | None = Field(default=None, ge=-20, le=150, description="Degrees Celsius")
+    power_w: NonNegative | None = None
+    cpu_usage_pct: Percent | None = None
     disk_used_pct: Percent
     memory_used_pct: Percent
     network_mbps: NonNegative

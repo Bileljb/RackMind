@@ -1,0 +1,17 @@
+# systemd unit: runs the agent at boot and restarts it if it stops.
+# Install: see docs/modules/agent.md. Settings live in /etc/rackmind-agent.env.
+[Unit]
+Description=Rackmind monitoring agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/rackmind-agent.env
+ExecStart=/opt/rackmind-agent/venv/bin/python /opt/rackmind-agent/rackmind_agent.py
+Restart=always
+RestartSec=5
+# A throwaway unprivileged user created by systemd: the agent only reads system stats.
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target

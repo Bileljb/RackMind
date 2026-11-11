@@ -3,7 +3,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field
 
-from app.models import IncidentStatus, Severity
+from app.models import IncidentStatus, ServerSource, Severity
 
 
 class IncidentFilters(BaseModel):
@@ -13,6 +13,7 @@ class IncidentFilters(BaseModel):
     severity: list[Severity] = []
     server_id: int | None = None
     rack_id: int | None = None
+    source: ServerSource | None = None  # Live mode asks for "agent", Simulation for "simulated"
     limit: int = Field(50, ge=1, le=200)
     offset: int = Field(0, ge=0)
 

@@ -53,6 +53,7 @@ async def test_ingest_batch_stores_all_readings(
         {"network_mbps": -0.1},
         {"cpu_temp": 200},
         {"cpu_temp": "hot"},
+        {"cpu_usage_pct": 101},
         {"timestamp": "2026-10-25T10:00:00"},  # no timezone
         {"timestamp": (datetime.now(UTC) + timedelta(hours=1)).isoformat()},
         {"server_id": 0},
@@ -67,9 +68,23 @@ async def test_ingest_rejects_invalid_values(
     assert await count_metrics(db) == 0
 
 
+async def test_reading_without_temperature_and_power_is_accepted(
+    client: AsyncClient, servers: list[Server]
+) -> None:
+    """A VPS has no such sensors: it sends CPU usage instead."""
+    payload = {**reading(servers[0].id), "cpu_usage_pct": 37.5}
+    del payload["cpu_temp"], payload["power_w"]
+
+    response = await client.post("/metrics", json=payload)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert (body["cpu_temp"], body["power_w"], body["cpu_usage_pct"]) == (None, None, 37.5)
+
+
 async def test_ingest_rejects_missing_field(client: AsyncClient, servers: list[Server]) -> None:
     payload = reading(servers[0].id)
-    del payload["power_w"]
+    del payload["disk_used_pct"]
 
     response = await client.post("/metrics", json=payload)
 

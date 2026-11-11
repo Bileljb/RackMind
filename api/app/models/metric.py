@@ -18,8 +18,11 @@ class Metric(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     server_id: Mapped[int] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"))
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    cpu_temp: Mapped[float]  # degrees Celsius
-    power_w: Mapped[float]
+    # None = the server has no sensor for it (most VPSes have neither temperature nor power).
+    cpu_temp: Mapped[float | None]  # degrees Celsius
+    power_w: Mapped[float | None]
+    # None on readings recorded before this metric was added.
+    cpu_usage_pct: Mapped[float | None]
     disk_used_pct: Mapped[float]
     memory_used_pct: Mapped[float]
     network_mbps: Mapped[float]

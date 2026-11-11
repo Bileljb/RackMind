@@ -11,7 +11,9 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 # Evidence must point at a metric we actually measure, so the UI can link and label it.
-MetricName = Literal["cpu_temp", "power_w", "disk_used_pct", "memory_used_pct", "network_mbps"]
+MetricName = Literal[
+    "cpu_temp", "power_w", "cpu_usage_pct", "disk_used_pct", "memory_used_pct", "network_mbps"
+]
 
 Sentence = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
 

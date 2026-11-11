@@ -9,7 +9,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Incident, IncidentStatus, Role, Server, Severity, User
+from app.models import Incident, IncidentStatus, Role, Server, ServerSource, Severity, User
 from tests.conftest import FakeRedis
 
 Login = Callable[[Role], User]
@@ -183,6 +183,11 @@ async def test_list_filters_newest_first(
     assert await ids(rack_id=r01_a.rack_id) == [middle, oldest]
     assert await ids(server_id=r02.id) == [newest]
     assert await ids(limit=1, offset=1) == [middle]
+
+    r02.source = ServerSource.AGENT
+    await db.commit()
+    assert await ids(source="agent") == [newest]
+    assert await ids(source="simulated") == [middle, oldest]
 
 
 async def test_list_rejects_bad_filters(client: AsyncClient, login: Login) -> None:

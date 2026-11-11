@@ -7,7 +7,8 @@ export default function RacksPage() {
     <>
       <h1 className="mb-1 text-xl font-semibold">Racks</h1>
       <p className="mb-6 text-sm text-ink-2">
-        CPU temperature of every server, refreshed every 5 seconds.
+        Every server at a glance (CPU temperature, or CPU usage when a server has no sensor),
+        refreshed every 5 seconds.
       </p>
       <RackGrid />
     </>

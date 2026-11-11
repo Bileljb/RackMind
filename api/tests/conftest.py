@@ -62,17 +62,31 @@ async def db(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 class FakeRedis:
-    """Stands in for Redis: records queued jobs and published events instead of sending them."""
+    """Stands in for Redis: records queued jobs and published events instead of sending them,
+    and keeps plain keys in a dict."""
 
     def __init__(self) -> None:
         self.jobs: list[tuple[str, tuple[Any, ...]]] = []
         self.published: list[tuple[str, dict[str, Any]]] = []
+        self.values: dict[str, str] = {}
+        self.expiry_s: dict[str, int] = {}  # what `ex=` asked for; nothing actually expires
 
     async def enqueue_job(self, function: str, *args: Any) -> None:
         self.jobs.append((function, args))
 
     async def publish(self, channel: str, message: str) -> None:
         self.published.append((channel, json.loads(message)))
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.values[key] = value
+        if ex is not None:
+            self.expiry_s[key] = ex
+
+    async def exists(self, key: str) -> int:
+        return int(key in self.values)
+
+    async def delete(self, key: str) -> None:
+        self.values.pop(key, None)
 
     def actions(self) -> list[str]:
         """The `action` of every published event, in order."""

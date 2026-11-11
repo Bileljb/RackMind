@@ -1,4 +1,9 @@
-"""Entry point: `python -m rackmind_sim`. Sends one batch of readings per interval, forever."""
+"""Entry point: `python -m rackmind_sim`. Sends one batch of readings per interval, forever.
+
+It only simulates while someone is in Simulation mode in the web app: before each cycle it
+asks the API (`GET /simulation/status`) and sleeps while the answer is "inactive". Each time
+the simulation starts again, the fault schedule replays from zero, like a fresh demo.
+"""
 
 import asyncio
 import contextlib
@@ -20,7 +25,10 @@ log = logging.getLogger("rackmind_sim")
 
 async def fetch_servers(client: httpx.AsyncClient) -> list[ServerInfo]:
     racks = (await client.get("/racks")).raise_for_status().json()
-    servers = (await client.get("/servers")).raise_for_status().json()
+    # Only simulated servers: real ones (source "agent") get their readings from their agent.
+    servers = (
+        (await client.get("/servers", params={"source": "simulated"})).raise_for_status().json()
+    )
     rack_names = {rack["id"]: rack["name"] for rack in racks}
     return [ServerInfo(s["id"], s["hostname"], rack_names[s["rack_id"]]) for s in servers]
 
@@ -33,6 +41,16 @@ async def wait_for_servers(client: httpx.AsyncClient) -> list[ServerInfo]:
         except httpx.HTTPError as error:
             log.warning("API not ready (%s), retrying in %ss", error, STARTUP_RETRY_DELAY_S)
             await asyncio.sleep(STARTUP_RETRY_DELAY_S)
+
+
+async def simulation_active(client: httpx.AsyncClient) -> bool:
+    """Is anyone in Simulation mode right now? When the API can't say, assume not."""
+    try:
+        response = (await client.get("/simulation/status")).raise_for_status()
+    except httpx.HTTPError as error:
+        log.warning("Could not read the simulation status: %s", error)
+        return False
+    return bool(response.json()["active"])
 
 
 def check_fault_targets(faults: list[Fault], servers: list[ServerInfo]) -> None:
@@ -63,31 +81,49 @@ def build_batch(
     return batch
 
 
+async def send_batch(client: httpx.AsyncClient, payload: list[dict[str, object]]) -> bool:
+    try:
+        (await client.post("/metrics/batch", json=payload)).raise_for_status()
+    except httpx.HTTPError as error:
+        # Keep going: a short API outage should not kill the simulator.
+        log.error("Failed to send readings: %s", error)
+        return False
+    return True
+
+
 async def run(config: Config) -> None:
     rng = random.Random(config.seed)
     headers = {"X-API-Key": config.api_key}
     async with httpx.AsyncClient(base_url=config.api_url, headers=headers, timeout=10) as client:
         servers = await wait_for_servers(client)
         if not servers:
-            raise SystemExit("The API has no servers. Run the seed script first.")
+            raise SystemExit("The API has no simulated servers. Run the seed script first.")
         check_fault_targets(config.faults, servers)
         baselines = {server.id: make_baseline(server.id) for server in servers}
-        for fault in config.faults:
-            log.info("Scheduled %s at +%ss for %ss", fault, fault.start_s, fault.duration_s)
+        log.info("Ready. Waiting for someone to switch to Simulation mode.")
 
         loop = asyncio.get_running_loop()
-        started = loop.time()
+        started: float | None = None  # when the current simulation run began; None = paused
         while True:
             tick = loop.time()
-            elapsed_s = tick - started
-            payload = build_batch(servers, baselines, config.faults, elapsed_s, rng)
-            active = [str(f) for f in config.faults if f.is_active(elapsed_s)] or ["none"]
-            try:
-                (await client.post("/metrics/batch", json=payload)).raise_for_status()
-                log.info("Sent %d readings (active faults: %s)", len(payload), ", ".join(active))
-            except httpx.HTTPError as error:
-                # Keep going: a short API outage should not kill the simulator.
-                log.error("Failed to send readings: %s", error)
+            if await simulation_active(client):
+                if started is None:
+                    started = tick
+                    log.info("Simulation started")
+                    for fault in config.faults:
+                        log.info(
+                            "Scheduled %s at +%ss for %ss", fault, fault.start_s, fault.duration_s
+                        )
+                elapsed_s = tick - started
+                payload = build_batch(servers, baselines, config.faults, elapsed_s, rng)
+                if await send_batch(client, payload):
+                    active = [str(f) for f in config.faults if f.is_active(elapsed_s)] or ["none"]
+                    log.info(
+                        "Sent %d readings (active faults: %s)", len(payload), ", ".join(active)
+                    )
+            elif started is not None:
+                started = None
+                log.info("Simulation paused: nobody is in Simulation mode")
             await asyncio.sleep(max(0.0, config.interval_s - (loop.time() - tick)))
 
 

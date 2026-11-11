@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     groq_timeout_s: float = Field(default=30, gt=0)  # per attempt
     groq_max_retries: int = Field(default=3, ge=0)  # on timeouts, 429 and 5xx, with backoff
 
+    # A real server with no reading for this long gets a "not reporting" incident. Agents send
+    # every 5s, so 60s means about 12 missed readings: a dead machine, not a slow request.
+    heartbeat_timeout_s: int = Field(default=60, ge=15)
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -7,12 +7,16 @@ export type Rack = {
   location: string;
 };
 
+/** Where a server's readings come from: the simulator, or rackmind-agent on a real machine. */
+export type Source = "simulated" | "agent";
+
 /** `ServerOut` */
 export type Server = {
   id: number;
   rack_id: number;
   hostname: string;
   rack_unit: number; // vertical slot, U1 at the bottom
+  source: Source;
 };
 
 /** `MetricOut` */
@@ -20,8 +24,10 @@ export type Metric = {
   id: number;
   server_id: number;
   timestamp: string; // ISO 8601 with timezone, e.g. "2026-10-25T08:30:09Z"
-  cpu_temp: number; // degrees Celsius
-  power_w: number;
+  // null: the server has no sensor for it (most real servers report neither)
+  cpu_temp: number | null; // degrees Celsius
+  power_w: number | null;
+  cpu_usage_pct: number | null; // null on simulated readings from before it existed
   disk_used_pct: number;
   memory_used_pct: number;
   network_mbps: number;
@@ -29,6 +35,9 @@ export type Metric = {
 
 /** The numeric fields of a Metric, i.e. what can be charted. */
 export type MetricField = Exclude<keyof Metric, "id" | "server_id" | "timestamp">;
+
+/** What opened an incident: a metric, or `heartbeat` when a real server stopped reporting. */
+export type IncidentMetric = MetricField | "heartbeat";
 
 /** `Role`, lowest to highest. Each role can do everything the roles before it can. */
 export const ROLES = ["operator", "engineer", "admin"] as const;
@@ -55,7 +64,7 @@ export type Incident = {
   id: number;
   server_id: number;
   title: string;
-  metric_name: MetricField;
+  metric_name: IncidentMetric;
   severity: Severity;
   status: IncidentStatus;
   assignee_id: number | null;
@@ -109,6 +118,9 @@ export type Diagnosis = {
   finished_at: string | null;
   feedback: { helpful: number; not_helpful: number; mine: boolean | null };
 };
+
+/** `SimulationStatus`: is anyone in Simulation mode (so the simulator is running)? */
+export type SimulationStatus = { active: boolean };
 
 /** `IncidentEvent`: what the live stream (`/stream`) sends when an incident changes. */
 export type IncidentEvent = {
@@ -164,9 +176,9 @@ export async function apiGet<T>(path: string): Promise<T> {
   return handle<T>(await fetch(`/api${path}`));
 }
 
-/** POST / PUT / PATCH a JSON body. Throws `ApiError` with the API's message on failure. */
+/** POST / PUT / PATCH / DELETE, with an optional JSON body. Throws `ApiError` on failure. */
 export async function apiSend<T>(
-  method: "POST" | "PUT" | "PATCH",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,
 ): Promise<T> {

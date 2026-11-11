@@ -26,10 +26,14 @@ logger = logging.getLogger(__name__)
 METRIC_LABELS = {
     "cpu_temp": "CPU temperature",
     "power_w": "power draw",
+    "cpu_usage_pct": "CPU usage",
     "disk_used_pct": "disk usage",
     "memory_used_pct": "memory usage",
     "network_mbps": "network traffic",
 }
+
+# Not a measured metric: the heartbeat job uses it when a server stops sending readings.
+HEARTBEAT_METRIC = "heartbeat"
 
 # What changed on an incident, to tell live dashboards: (event action, incident).
 Change = tuple[str, Incident]
@@ -44,38 +48,43 @@ async def run_detection(db: AsyncSession, redis: ArqRedis, server_ids: Collectio
     since = datetime.now(UTC) - detector.LOOKBACK
     readings = await metrics_service.recent_readings(db, server_ids, since)
     servers = await db.scalars(select(Server).where(Server.id.in_(list(readings))))
-    active = await _active_incidents(db, list(readings))
+    active = await active_incidents(db, list(readings))
 
     changes: list[Change] = []
     for server in servers:
         server_readings = readings[server.id]
         findings = detector.evaluate(server_readings)
         checked_at = server_readings[-1].timestamp
-        change = await _apply_findings(db, server, active.get(server.id), findings, checked_at)
+        change = await apply_findings(db, server, active.get(server.id), findings, checked_at)
         if change is not None:
             changes.append(change)
     await db.commit()
+    await publish_changes(redis, changes)
 
+
+async def publish_changes(redis: ArqRedis, changes: list[Change]) -> None:
+    """Tell live dashboards, and ask the AI for a cause of new incidents. Call after commit."""
     for action, incident in changes:
         await publish_incident_event(redis, action, incident)
         if action == "incident.opened":
-            await diagnosis_service.enqueue(redis, incident.id)  # ask the AI for a cause
+            await diagnosis_service.enqueue(redis, incident.id)
 
 
-async def _active_incidents(db: AsyncSession, server_ids: Collection[int]) -> dict[int, Incident]:
+async def active_incidents(db: AsyncSession, server_ids: Collection[int]) -> dict[int, Incident]:
     stmt = select(Incident).where(
         Incident.server_id.in_(server_ids), Incident.status != IncidentStatus.RESOLVED
     )
     return {incident.server_id: incident for incident in await db.scalars(stmt)}
 
 
-async def _apply_findings(
+async def apply_findings(
     db: AsyncSession,
     server: Server,
     incident: Incident | None,
     findings: list[Finding],
     checked_at: datetime,
 ) -> Change | None:
+    """Open, escalate or mark recovered the server's incident. Also used by the heartbeat."""
     if not findings:
         if incident is not None and incident.recovered_at is None:
             incident.recovered_at = checked_at  # suggest resolving; a person decides
@@ -117,7 +126,7 @@ async def _open_incident(
         insert(Incident)
         .values(
             server_id=server.id,
-            title=f"High {METRIC_LABELS[worst.metric]} on {server.hostname}",
+            title=_title(worst, server),
             metric_name=worst.metric,
             severity=worst.severity,
         )
@@ -146,3 +155,9 @@ async def _open_incident(
     diagnosis_service.add_pending(db, incident.id)
     logger.info("Opened incident %s (%s) on %s", incident.id, worst.severity, server.hostname)
     return incident
+
+
+def _title(worst: Finding, server: Server) -> str:
+    if worst.metric == HEARTBEAT_METRIC:
+        return f"{server.hostname} is not reporting"
+    return f"High {METRIC_LABELS[worst.metric]} on {server.hostname}"

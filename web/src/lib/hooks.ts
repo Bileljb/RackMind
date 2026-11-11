@@ -11,6 +11,8 @@ import {
   type Metric,
   type Rack,
   type Server,
+  type SimulationStatus,
+  type Source,
   type User,
   type UserBrief,
 } from "@/lib/api";
@@ -31,20 +33,37 @@ const pushed: SWRConfiguration = { refreshInterval: 30_000 };
 /** Every SWR key that holds incident data starts with this, so the stream can refresh them. */
 export const INCIDENTS_KEY_PREFIX = "/incidents";
 
-export function useRacks() {
-  return useSWR<Rack[]>("/racks", apiGet, stable);
+/** `?source=agent` (Live mode) or `?source=simulated` (Simulation mode); "" for both. */
+function sourceParam(source: Source | undefined): string {
+  return source ? `source=${source}` : "";
 }
 
-export function useServers() {
-  return useSWR<Server[]>("/servers", apiGet, stable);
+function withQuery(path: string, ...params: string[]): string {
+  const query = params.filter(Boolean).join("&");
+  return query ? `${path}?${query}` : path;
+}
+
+export function useRacks(source?: Source) {
+  return useSWR<Rack[]>(withQuery("/racks", sourceParam(source)), apiGet, stable);
+}
+
+export function useServers(source?: Source) {
+  return useSWR<Server[]>(withQuery("/servers", sourceParam(source)), apiGet, stable);
 }
 
 export function useServer(serverId: number) {
   return useSWR<Server>(`/servers/${serverId}`, apiGet, stable);
 }
 
-export function useLatestMetrics() {
-  return useSWR<Metric[]>("/metrics/latest", apiGet, live);
+export function useLatestMetrics(source?: Source) {
+  return useSWR<Metric[]>(withQuery("/metrics/latest", sourceParam(source)), apiGet, live);
+}
+
+export const SIMULATION_STATUS_KEY = "/simulation/status";
+
+/** Whether the simulator is running. Polled only while `enabled` (in Simulation mode). */
+export function useSimulationStatus(enabled: boolean) {
+  return useSWR<SimulationStatus>(enabled ? SIMULATION_STATUS_KEY : null, apiGet, live);
 }
 
 /**
@@ -79,9 +98,9 @@ export function useUsers() {
 }
 
 /** Incidents, newest first. An empty `statuses` list means every status. */
-export function useIncidents(statuses: IncidentStatus[] = []) {
-  const query = statuses.map((s) => `status=${s}`).join("&");
-  const key = `${INCIDENTS_KEY_PREFIX}?limit=200${query ? `&${query}` : ""}`;
+export function useIncidents(statuses: IncidentStatus[] = [], source?: Source) {
+  const statusParams = statuses.map((s) => `status=${s}`);
+  const key = withQuery(INCIDENTS_KEY_PREFIX, "limit=200", sourceParam(source), ...statusParams);
   return useSWR<Incident[]>(key, apiGet, pushed);
 }
 

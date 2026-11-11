@@ -2,7 +2,7 @@
 
 **AI-assisted data center monitoring and incident management.**
 
-Rackmind watches a (simulated) data center, notices when a server starts misbehaving, opens an incident, and asks an LLM for a probable cause and next steps, while people stay in charge of every decision.
+Rackmind watches real Linux servers through a small agent, or a simulated data center you can switch to at any time to explore it. It notices when a server starts misbehaving or goes silent, opens an incident, and asks an LLM for a probable cause and next steps, while people stay in charge of every decision.
 
 <!-- CI badge, once the repo is on GitHub:
 [![CI](https://github.com/<user>/rackmind/actions/workflows/ci.yml/badge.svg)](https://github.com/<user>/rackmind/actions/workflows/ci.yml)
@@ -15,22 +15,25 @@ Rackmind watches a (simulated) data center, notices when a server starts misbeha
 
 ## What it does
 
-- **Live rack view.** Four racks × five servers, each reporting CPU temperature, power, disk, memory and network every 5 seconds. Each server has its own charts with selectable time ranges.
+- **Live and Simulation modes.** A switch in the header shows either your real servers, or a simulated data center of four racks × five servers. The simulator only runs while someone is in Simulation mode, and replays a scripted demo (first incident within a minute) each time.
+- **Real servers.** A one-file Python agent sends CPU usage, memory, disk, network (and temperature when there is a sensor) every 5 seconds. Each server has its own charts with selectable time ranges.
+- **Silent server detection.** A heartbeat job opens a critical "not reporting" incident when a real server stops sending, and the AI judges its last minutes before the silence.
 - **Anomaly detection.** A background worker checks every batch of readings against fixed safety limits *and* each server's own recent normal (a rolling z-score), and opens **one** incident per affected server, never duplicates.
 - **Incident workflow.** Incidents go `open → acknowledged → resolved`, with assignment, comments, a full audit history, and a "looks recovered" hint when readings return to normal. Nothing is ever closed automatically.
 - **AI diagnosis.** Each new incident gets a structured diagnosis from an LLM: probable cause, confidence, recommended steps and the evidence behind them. The answer is schema-validated before anyone sees it; the AI **only suggests** and never acts on infrastructure.
 - **Real-time updates.** New incidents, status changes and diagnoses appear in every open browser instantly (Server-Sent Events over Redis pub/sub), with a "New incident" toast.
 - **Role-based access.** Operators, engineers and admins see and can do different things. The API enforces every rule; the UI just hides what you can't use.
-- **Fault injection.** The simulator can overheat a rack, fill a disk or leak memory on a schedule, so the whole pipeline can be demonstrated end to end.
+- **Fault injection.** The simulator can spike a CPU, overheat a rack, fill a disk or leak memory on a schedule, so the whole pipeline can be demonstrated end to end.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    sim["Simulator<br/>(telemetry + faults)"] -- "POST /metrics/batch<br/>X-API-Key" --> api
+    agent["rackmind-agent<br/>(real servers)"] -- "POST /metrics/batch<br/>X-API-Key" --> api
+    sim["Simulator<br/>(Simulation mode only)"] -- "POST /metrics/batch<br/>X-API-Key" --> api
     subgraph backend["Backend (Python)"]
         api["FastAPI<br/>REST + SSE"]
-        worker["ARQ worker<br/>detector + AI diagnosis"]
+        worker["ARQ worker<br/>detector, heartbeat,<br/>AI diagnosis"]
     end
     api -- "save readings" --> pg[("PostgreSQL")]
     api -- "queue detect job" --> redis[("Redis<br/>queue + pub/sub")]
@@ -45,9 +48,9 @@ flowchart LR
 
 **The flow, step by step**
 
-1. The **simulator** sends 20 readings every 5 s to `POST /metrics/batch`, authenticated with a machine API key.
+1. Each **agent** sends its server's reading every 5 s to `POST /metrics/batch`, authenticated with a machine API key. In Simulation mode, the **simulator** does the same for 20 simulated servers.
 2. The **API** validates them (Pydantic), writes them in one `INSERT`, queues a `detect_anomalies` job in Redis, and responds immediately. Ingestion never waits on detection.
-3. The **worker** runs the detector. If a server looks wrong, it opens an incident (or raises the severity of the existing one) and queues a diagnosis job.
+3. The **worker** runs the detector. If a server looks wrong, it opens an incident (or raises the severity of the existing one) and queues a diagnosis job. Every 30 s it also checks that each real server reported recently.
 4. The worker builds a compact context (metrics around the incident, rack neighbours, similar past incidents), calls the **LLM** with a strict JSON schema, validates the answer again, and stores it, or stores *why* it failed.
 5. Every change is published on Redis; each open **`/stream`** connection forwards it to the browser, which refetches what changed.
 
@@ -87,7 +90,9 @@ That starts Postgres, Redis, the API, the worker, the simulator and the dashboar
 | `engineer@rackmind.local` | engineer |
 | `admin@rackmind.local` | admin |
 
-**See an incident happen.** The example `.env` schedules three faults (`SIM_FAULTS`): rack R02 overheats, `r03-srv02` leaks memory, and `r01-srv03` fills its disk. The detector needs a few minutes of normal readings to learn each server's baseline, so the first incidents appear roughly **8 minutes** after start. Restart the schedule any time with `docker compose restart simulator`.
+**See an incident happen.** With no real server connected, the dashboard opens in **Simulation mode** (or pick it in the header, or open `/?mode=simulation`). That starts the simulator and its demo scenario (`SIM_FAULTS`): `r02-srv03` gets a CPU spike (a critical incident within about a minute), then `r03-srv02` leaks memory, rack R04 overheats and `r01-srv03` fills its disk. Switching back to Live stops it; switching again replays the scenario.
+
+**Connect a real server.** Register it with `docker compose exec api python -m app.add_server web-01 --group Production`, then run [`agent/rackmind_agent.py`](agent/rackmind_agent.py) on the machine with the id it prints. Steps, including a systemd service, are in [`docs/modules/agent.md`](docs/modules/agent.md).
 
 **AI diagnosis is optional.** Put a free key from [console.groq.com](https://console.groq.com/keys) in `GROQ_API_KEY`. Without one, everything else works, and incidents say the AI is not configured.
 
@@ -106,10 +111,15 @@ That starts Postgres, Redis, the API, the worker, the simulator and the dashboar
 ### Anomaly detection
 The detector (`api/app/services/detector.py`) is a set of pure functions, easy to test without a database. For each metric it compares the **mean of the last 30 s** (to smooth out noise) against two rules and keeps the more severe result:
 
-- **Fixed thresholds**: dangerous on any server (e.g. CPU ≥ 70 °C warning, ≥ 80 °C critical; disk/memory ≥ 85 % / ≥ 95 %).
+- **Fixed thresholds**: dangerous on any server (e.g. CPU ≥ 70 °C warning, ≥ 80 °C critical; CPU usage ≥ 90 % / ≥ 98 %; disk/memory ≥ 85 % / ≥ 95 %). Metrics a server doesn't report (most VPSes have no temperature sensor) are skipped.
 - **Rolling z-score**: how far the recent mean is from *this server's* baseline (its readings from 30 to 5 minutes ago). The 5-minute gap keeps a slow drift from hiding inside its own baseline; a per-metric floor on the standard deviation stops perfectly steady metrics from turning tiny wobbles into alarms; only *upward* deviations count, so recovery doesn't trigger a false alarm.
 
 **No duplicates:** a partial unique index in Postgres allows at most one active incident per server, and inserts use `ON CONFLICT DO NOTHING`, so two concurrent jobs can't both open one. New findings only raise an incident's severity, never lower it.
+
+**Silent servers:** detection runs when readings arrive, so it can't notice a server that stopped sending. A cron job in the worker (every 30 s) turns "no reading for 60 s" into a critical finding that goes through the same incident rules; when readings come back, the incident is marked "looks recovered".
+
+### Simulation mode
+The simulator only runs while someone is in Simulation mode. Browsers in that mode refresh a Redis key with a 90 s expiry every 30 s; the simulator checks it before each cycle and sleeps while it is gone. Closing the tab needs no cleanup: the key just expires. Every list the dashboard shows is filtered by `?source=agent` or `?source=simulated`, so demo data never mixes with real servers. Details in [`docs/modules/simulation-mode.md`](docs/modules/simulation-mode.md).
 
 ### AI diagnosis, safely
 - **Context, not raw data.** About 1,800 raw readings are summarised into per-minute averages plus baseline statistics (~3.5k characters), along with rack neighbours (shared cause, or one machine?), the detector's reasons, and up to five similar resolved incidents with their comments.
@@ -138,7 +148,8 @@ Login sets a signed JWT in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in pro
 
 ## Limits
 
-- **The data is simulated.** Real hardware would report through SNMP, IPMI/Redfish or an agent, at much higher volume, and would need retention and downsampling.
+- **The agent is deliberately minimal.** Agents share the simulator's API key (any agent could post for any server), readings are not buffered while the API is down, and installation is manual. Per-server revocable tokens, buffering and an install script are the production next steps.
+- **No retention yet.** Raw readings are kept forever; real volumes would need retention and downsampling.
 - A rack-wide fault opens one incident **per server**; nothing correlates them into one rack-level incident yet.
 - The AI only sees metrics, not logs or hardware events, so its causes stay fairly generic. Its confidence is the model's own estimate, not a measured probability.
 - Each new incident costs one LLM call.
@@ -146,16 +157,18 @@ Login sets a signed JWT in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in pro
 ## Testing and CI
 
 ```bash
-docker compose exec api pytest          # 196 tests: detector, deduplication, incident lifecycle,
-                                        # permission matrix, AI failure handling (mocked LLM), SSE…
-docker compose exec simulator pytest    # fault math
+docker compose exec api pytest          # 226 tests: detector, heartbeat, deduplication, incident
+                                        # lifecycle, permission matrix, simulation lease, AI failure
+                                        # handling (mocked LLM), SSE…
+docker compose exec simulator pytest    # fault math, pause/resume
+cd agent && pip install -e ".[dev]" && pytest   # network rate, payload shape
 docker compose exec api ruff check . && docker compose exec api mypy
 cd web && npm run lint && npm run typecheck
 ```
 
 Backend tests run against a separate `<db>_test` database, and each test is rolled back, so dev data is never touched. The LLM is replaced by a fake client: no network, no cost.
 
-**GitHub Actions** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint, format check, type-check and tests for the API (against a real Postgres), the simulator and the web app (including a production `next build`) on every push.
+**GitHub Actions** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint, format check, type-check and tests for the API (against a real Postgres), the simulator, the agent and the web app (including a production `next build`) on every push.
 
 ## Deployment
 
@@ -170,21 +183,25 @@ The production stack builds slim, non-root images without hot reload, keeps Post
 
 ```
 api/              FastAPI app, worker, migrations, tests
-  app/routers/    HTTP endpoints (metrics, racks, servers, incidents, auth, users, stream, diagnosis)
-  app/services/   business logic: detector, incidents, events, diagnosis
+  app/routers/    HTTP endpoints (metrics, racks, servers, incidents, auth, users, stream,
+                  diagnosis, simulation)
+  app/services/   business logic: detector, heartbeat, incidents, events, diagnosis, simulation
   app/ai/         LLM client, prompt, context builder, response schema
-  app/workers/    ARQ worker (detection + diagnosis jobs)
+  app/workers/    ARQ worker (detection + diagnosis jobs, heartbeat cron)
+  app/add_server.py  CLI to register a real server
 web/              Next.js dashboard
-simulator/        telemetry generator with fault injection
+simulator/        telemetry generator with fault injection (Simulation mode)
+agent/            rackmind-agent: one-file metrics sender for real Linux servers
 docs/modules/     short "how it works" notes per module
 docker-compose.yml        local development (hot reload)
 docker-compose.prod.yml   production (Caddy + HTTPS)
 ```
 
-Each module has a short write-up: [foundation](docs/modules/foundation.md) · [pipeline](docs/modules/pipeline.md) · [dashboard](docs/modules/dashboard.md) · [detection](docs/modules/detection.md) · [auth & real-time](docs/modules/auth-and-realtime.md) · [AI diagnosis](docs/modules/ai-diagnosis.md) · [deployment](docs/modules/deployment.md)
+Each module has a short write-up: [foundation](docs/modules/foundation.md) · [pipeline](docs/modules/pipeline.md) · [dashboard](docs/modules/dashboard.md) · [detection](docs/modules/detection.md) · [simulation mode](docs/modules/simulation-mode.md) · [agent](docs/modules/agent.md) · [auth & real-time](docs/modules/auth-and-realtime.md) · [AI diagnosis](docs/modules/ai-diagnosis.md) · [deployment](docs/modules/deployment.md)
 
 ## Roadmap
 
+- Per-server agent tokens (hashed, revocable), agent buffering and an install script
 - Group related incidents (e.g. a rack-wide overheat) into one parent incident
 - Editable detection rules per server or metric from the UI
 - Metric retention and downsampling (TimescaleDB continuous aggregates)

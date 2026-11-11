@@ -14,6 +14,7 @@ from app.routers import (
     metrics,
     racks,
     servers,
+    simulation,
     stream,
     users,
 )
@@ -40,3 +41,4 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(stream.router)
 app.include_router(diagnosis.router)
+app.include_router(simulation.router)

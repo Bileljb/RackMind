@@ -13,6 +13,11 @@ from rackmind_sim.readings import Reading, ServerInfo, clamp_pct
 OVERHEAT_DEGREES_PER_MIN = 3.0
 OVERHEAT_MAX_EXTRA_DEGREES = 40.0
 FAN_WATTS_PER_DEGREE = 3.0  # hotter servers spin their fans harder and draw more power
+# Hot CPUs throttle their clock, so the same work keeps them busier for longer.
+THROTTLE_USAGE_PCT_PER_DEGREE = 0.8
+# A runaway process pins the CPU almost at once, and heats it up a little.
+CPU_SPIKE_USAGE_PCT = 99.0
+CPU_SPIKE_EXTRA_DEGREES = 12.0
 DISK_FILL_PCT_PER_MIN = 3.0
 MEMORY_LEAK_PCT_PER_MIN = 2.5
 MEMORY_LEAK_CEILING_PCT = 99.5
@@ -20,6 +25,7 @@ MEMORY_LEAK_CEILING_PCT = 99.5
 
 class FaultKind(StrEnum):
     OVERHEAT = "overheat"  # target: a rack name, every server in it heats up
+    CPU_SPIKE = "cpu_spike"  # target: a hostname; fast, so a demo shows an incident in ~1 min
     DISK_FILL = "disk_fill"  # target: a hostname
     MEMORY_LEAK = "memory_leak"  # target: a hostname
 
@@ -52,6 +58,15 @@ class Fault:
                     reading,
                     cpu_temp=reading.cpu_temp + extra,
                     power_w=reading.power_w + extra * FAN_WATTS_PER_DEGREE,
+                    cpu_usage_pct=clamp_pct(
+                        reading.cpu_usage_pct + extra * THROTTLE_USAGE_PCT_PER_DEGREE
+                    ),
+                )
+            case FaultKind.CPU_SPIKE:
+                return replace(
+                    reading,
+                    cpu_usage_pct=max(reading.cpu_usage_pct, CPU_SPIKE_USAGE_PCT),
+                    cpu_temp=reading.cpu_temp + CPU_SPIKE_EXTRA_DEGREES,
                 )
             case FaultKind.DISK_FILL:
                 filled = reading.disk_used_pct + minutes_in * DISK_FILL_PCT_PER_MIN

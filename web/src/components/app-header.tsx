@@ -6,13 +6,15 @@ import { Suspense, useEffect, useState } from "react";
 
 import { NavLink } from "@/components/nav-link";
 import { apiSend, type IncidentEvent } from "@/lib/api";
-import { useIncidents, useMe } from "@/lib/hooks";
+import { useIncidents, useMe, useServers } from "@/lib/hooks";
+import { MODE_SOURCE, setMode, useMode, useSimulationKeepalive, type Mode } from "@/lib/mode";
 import { can } from "@/lib/permissions";
 import { useIncidentStream } from "@/lib/use-incident-stream";
 
 /**
- * Top bar: brand, navigation, live-feed status and the user menu. It also owns the app's one
- * live incident connection, so every page gets live updates.
+ * Top bar: brand, navigation, Live / Simulation switch, live-feed status and the user menu.
+ * It also owns the app's one live incident connection (so every page gets live updates) and
+ * the simulation keepalive (so the simulator runs while this browser is in Simulation mode).
  * The path is only known per request, hence <Suspense> (the shell shows the bare brand).
  */
 export function AppHeader() {
@@ -35,9 +37,12 @@ function HeaderForPath() {
 
 function SignedInHeader() {
   const me = useMe();
-  const active = useIncidents(["open", "acknowledged"]);
+  const mode = useMode();
+  const source = mode ? MODE_SOURCE[mode] : undefined;
+  const active = useIncidents(["open", "acknowledged"], source);
   const { connected, lastEvent } = useIncidentStream();
-  const activeCount = active.data?.length;
+  useSimulationKeepalive(mode);
+  const activeCount = mode ? active.data?.length : undefined;
 
   return (
     <>
@@ -54,6 +59,7 @@ function SignedInHeader() {
         {can(me.data, "manageUsers") && <NavLink href="/admin/users">Users</NavLink>}
       </nav>
       <div className="ml-auto flex items-center gap-4 text-sm">
+        <ModeSwitch mode={mode} />
         <LiveDot connected={connected} />
         {me.data && (
           <span className="hidden text-ink-2 sm:inline">
@@ -62,8 +68,36 @@ function SignedInHeader() {
         )}
         <LogoutButton />
       </div>
-      <NewIncidentToast event={lastEvent} />
+      <NewIncidentToast event={lastEvent} mode={mode} />
     </>
+  );
+}
+
+const MODES: { mode: Mode; label: string }[] = [
+  { mode: "live", label: "Live" },
+  { mode: "simulation", label: "Simulation" },
+];
+
+/** Real servers or the demo data center. Switching to Simulation starts the simulator. */
+function ModeSwitch({ mode }: { mode: Mode | null }) {
+  return (
+    <div
+      role="group"
+      aria-label="Data shown"
+      className="flex rounded-md border border-line bg-surface p-0.5 text-sm"
+    >
+      {MODES.map((option) => (
+        <button
+          key={option.mode}
+          type="button"
+          aria-pressed={mode === option.mode}
+          onClick={() => setMode(option.mode, mode)}
+          className={`rounded px-2.5 py-1 ${mode === option.mode ? "bg-page font-medium text-ink" : "text-ink-2 hover:text-ink"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -100,19 +134,24 @@ function LogoutButton() {
 
 const TOAST_MS = 8000;
 
-/** "New incident" popup when the detector opens one, wherever the user is in the app. */
-function NewIncidentToast({ event }: { event: IncidentEvent | null }) {
+/**
+ * "New incident" popup when the detector opens one, wherever the user is in the app. Only for
+ * the current mode: a demo incident must not pop up over real servers, nor the reverse.
+ */
+function NewIncidentToast({ event, mode }: { event: IncidentEvent | null; mode: Mode | null }) {
   const [visible, setVisible] = useState<IncidentEvent | null>(null);
+  const servers = useServers(mode ? MODE_SOURCE[mode] : undefined);
+  const inMode = servers.data?.some((s) => s.id === event?.incident.server_id) ?? false;
 
   useEffect(() => {
-    if (event?.action !== "incident.opened") return;
+    if (event?.action !== "incident.opened" || !inMode) return;
     const show = setTimeout(() => setVisible(event), 0);
     const hide = setTimeout(() => setVisible(null), TOAST_MS);
     return () => {
       clearTimeout(show);
       clearTimeout(hide);
     };
-  }, [event]);
+  }, [event, inMode]);
 
   if (!visible) return null;
   return (

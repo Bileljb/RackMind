@@ -5,9 +5,10 @@ import { useState } from "react";
 
 import { RecoveryChip, SeverityBadge, StatusBadge } from "@/components/incident-badges";
 import { ErrorPanel, Skeleton } from "@/components/states";
-import type { IncidentStatus } from "@/lib/api";
+import type { IncidentStatus, Source } from "@/lib/api";
 import { formatDateTime, personName } from "@/lib/format";
 import { useDirectory, useIncidents, useServers } from "@/lib/hooks";
+import { MODE_SOURCE, useMode } from "@/lib/mode";
 
 const VIEWS: { label: string; statuses: IncidentStatus[] }[] = [
   { label: "Active", statuses: ["open", "acknowledged"] },
@@ -16,8 +17,15 @@ const VIEWS: { label: string; statuses: IncidentStatus[] }[] = [
 ];
 
 export function IncidentList() {
+  const mode = useMode();
+  if (mode === null) return <Skeleton className="h-64" />;
+  return <IncidentListFor key={mode} source={MODE_SOURCE[mode]} />;
+}
+
+/** Only incidents of the current mode's servers: real ones in Live, simulated in Simulation. */
+function IncidentListFor({ source }: { source: Source }) {
   const [view, setView] = useState(VIEWS[0]);
-  const incidents = useIncidents(view.statuses);
+  const incidents = useIncidents(view.statuses, source);
   const servers = useServers();
   const directory = useDirectory();
 

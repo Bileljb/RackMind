@@ -3,8 +3,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Role, Server, User
+from app.models import Role, Server, ServerSource, User
 from tests.conftest import INGEST_HEADERS, reading
 
 
@@ -69,6 +70,28 @@ async def test_latest_filters_by_rack(client: AsyncClient, servers: list[Server]
     response = await client.get("/metrics/latest", params={"rack_id": servers[2].rack_id})
 
     assert [row["server_id"] for row in response.json()] == [servers[2].id]
+
+
+async def test_inventory_and_latest_filter_by_source(
+    client: AsyncClient, db: AsyncSession, servers: list[Server]
+) -> None:
+    """Live mode asks for `agent`, Simulation mode for `simulated`."""
+    real = servers[2]  # alone in rack R02
+    real.source = ServerSource.AGENT
+    await db.commit()
+    await client.post("/metrics/batch", json=[reading(s.id) for s in servers])
+
+    async def get(path: str, source: str) -> list[dict[str, object]]:
+        response = await client.get(path, params={"source": source})
+        assert response.status_code == 200
+        return list(response.json())
+
+    assert [r["name"] for r in await get("/racks", "agent")] == ["R02"]
+    assert [r["name"] for r in await get("/racks", "simulated")] == ["R01"]
+    assert [s["id"] for s in await get("/servers", "agent")] == [real.id]
+    assert [s["source"] for s in await get("/servers", "simulated")] == ["simulated"] * 2
+    assert [m["server_id"] for m in await get("/metrics/latest", "agent")] == [real.id]
+    assert (await client.get("/servers", params={"source": "fake"})).status_code == 422
 
 
 async def test_history_defaults_to_last_hour_oldest_first(

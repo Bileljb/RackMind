@@ -93,3 +93,23 @@ def test_cpu_threshold_boundaries(value: float, expected: Severity | None) -> No
 
 def test_metrics_without_thresholds_are_not_checked() -> None:
     assert check_threshold("power_w", 10_000) is None
+
+
+def vps_series(minutes: float, cpu_usage_pct: float) -> list[Metric]:
+    """Like a real VPS: no temperature or power sensor, CPU usage reported instead."""
+    readings = series(1, minutes)
+    for r in readings:
+        r.cpu_temp = r.power_w = None
+        r.cpu_usage_pct = cpu_usage_pct
+    return readings
+
+
+def test_metrics_a_server_does_not_report_are_skipped() -> None:
+    assert evaluate(vps_series(60, cpu_usage_pct=20)) == []
+
+
+def test_pinned_cpu_usage_is_critical_on_its_own() -> None:
+    # Usage is judged by thresholds only (no z-score), so even a short history is enough.
+    assert severities(vps_series(1, cpu_usage_pct=99)) == {"cpu_usage_pct": Severity.CRITICAL}
+    assert severities(vps_series(1, cpu_usage_pct=92)) == {"cpu_usage_pct": Severity.WARNING}
+    assert severities(vps_series(60, cpu_usage_pct=60)) == {}

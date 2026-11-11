@@ -1,8 +1,8 @@
-import { BAND_LABEL, type TempBand } from "@/lib/temperature";
+import { BAND_LABEL, type Band } from "@/lib/bands";
 
 // Status color lives on the icon only; the text stays in ink so it is always readable,
 // and the label means the state never depends on color alone.
-const ICON_COLOR: Record<TempBand, string> = {
+const ICON_COLOR: Record<Band, string> = {
   normal: "text-status-good",
   warm: "text-status-warning",
   hot: "text-status-serious",
@@ -10,7 +10,7 @@ const ICON_COLOR: Record<TempBand, string> = {
   stale: "text-muted",
 };
 
-export function BandIcon({ band }: { band: TempBand }) {
+export function BandIcon({ band }: { band: Band }) {
   const className = `size-3.5 shrink-0 ${ICON_COLOR[band]}`;
   if (band === "normal") {
     return (
@@ -43,7 +43,7 @@ export function BandIcon({ band }: { band: TempBand }) {
   );
 }
 
-export function BandBadge({ band }: { band: TempBand }) {
+export function BandBadge({ band }: { band: Band }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-ink-2">
       <BandIcon band={band} />

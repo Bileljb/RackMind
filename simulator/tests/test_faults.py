@@ -9,6 +9,7 @@ NORMAL = Reading(
     server_id=1,
     cpu_temp=45,
     power_w=300,
+    cpu_usage_pct=20,
     disk_used_pct=50,
     memory_used_pct=40,
     network_mbps=200,
@@ -46,6 +47,7 @@ def test_overheat_raises_temp_and_power_of_its_rack_only() -> None:
 
     assert hot.cpu_temp == pytest.approx(75)  # 45 + 3 C/min * 10 min
     assert hot.power_w > NORMAL.power_w
+    assert hot.cpu_usage_pct > NORMAL.cpu_usage_pct  # throttling keeps the CPU busier
     assert untouched == NORMAL
 
 
@@ -73,3 +75,13 @@ def test_readings_return_to_normal_after_fault_ends() -> None:
     faults = [Fault(FaultKind.MEMORY_LEAK, "r01-srv01", start_s=0, duration_s=60)]
 
     assert apply_faults(NORMAL, SERVER, faults, 61) == NORMAL
+
+
+def test_cpu_spike_pins_cpu_usage_of_its_server_only() -> None:
+    faults = [Fault(FaultKind.CPU_SPIKE, "r01-srv01", start_s=0, duration_s=60)]
+
+    spiked = apply_faults(NORMAL, SERVER, faults, 1)
+
+    assert spiked.cpu_usage_pct == 99
+    assert spiked.cpu_temp > NORMAL.cpu_temp
+    assert apply_faults(NORMAL, OTHER_RACK_SERVER, faults, 1) == NORMAL

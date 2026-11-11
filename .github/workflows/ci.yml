@@ -1,5 +1,5 @@
 # Lint, type-check and test every part of the repo on each push and pull request.
-# The three jobs run in parallel; the run fails if any of them fails.
+# The jobs run in parallel; the run fails if any of them fails.
 name: CI
 
 on:
@@ -69,6 +69,28 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: simulator/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Format
+        run: ruff format --check .
+      - name: Type-check
+        run: mypy
+      - name: Test
+        run: pytest
+
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent/pyproject.toml
       - run: pip install -e ".[dev]"
       - name: Lint
         run: ruff check .

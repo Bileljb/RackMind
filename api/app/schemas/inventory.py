@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 
+from app.models import ServerSource
+
 
 class RackOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -16,3 +18,4 @@ class ServerOut(BaseModel):
     rack_id: int
     hostname: str
     rack_unit: int
+    source: ServerSource

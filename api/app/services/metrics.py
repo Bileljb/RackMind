@@ -6,7 +6,7 @@ from sqlalchemy import insert, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models import Metric, Server
+from app.models import Metric, Server, ServerSource
 from app.schemas.metric import MetricIn
 
 
@@ -38,7 +38,9 @@ async def ingest_metrics(db: AsyncSession, readings: list[MetricIn]) -> int:
     return len(readings)
 
 
-async def latest_metrics(db: AsyncSession, rack_id: int | None = None) -> list[Metric]:
+async def latest_metrics(
+    db: AsyncSession, *, rack_id: int | None = None, source: ServerSource | None = None
+) -> list[Metric]:
     """The most recent reading of each server (servers with no readings are left out).
 
     Uses a LATERAL join: for each server row, run "its newest metric, LIMIT 1". Each of those
@@ -54,6 +56,8 @@ async def latest_metrics(db: AsyncSession, rack_id: int | None = None) -> list[M
     stmt = select(aliased(Metric, newest)).select_from(Server).join(newest, true())
     if rack_id is not None:
         stmt = stmt.where(Server.rack_id == rack_id)
+    if source is not None:
+        stmt = stmt.where(Server.source == source)
     return list(await db.scalars(stmt.order_by(Server.id)))
 
 

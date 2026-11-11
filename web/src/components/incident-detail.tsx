@@ -12,9 +12,10 @@ import {
   type AuditEvent,
   type Comment,
   type Incident,
+  type IncidentMetric,
   type UserBrief,
 } from "@/lib/api";
-import { formatDateTime, METRIC_LABEL, personName } from "@/lib/format";
+import { formatDateTime, INCIDENT_METRIC_LABEL, personName } from "@/lib/format";
 import { useDirectory, useIncident, useMe, useServers } from "@/lib/hooks";
 import { can } from "@/lib/permissions";
 
@@ -56,7 +57,8 @@ export function IncidentDetailView({ incidentId }: { incidentId: number }) {
           ) : (
             `Server #${incident.server_id}`
           )}{" "}
-          · {METRIC_LABEL[incident.metric_name]} · opened {formatDateTime(incident.created_at)}
+          · {INCIDENT_METRIC_LABEL[incident.metric_name]} · opened{" "}
+          {formatDateTime(incident.created_at)}
         </p>
       </header>
 
@@ -272,14 +274,14 @@ function actionLabel(action: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-type Finding = { metric: keyof typeof METRIC_LABEL; reason: string };
+type Finding = { metric: IncidentMetric; reason: string };
 
 /** The detector's explanation: one `reason` when severity rose, a `findings` list when opened. */
 function eventReasons(event: AuditEvent): string[] {
   const { reason, findings } = event.details;
   if (typeof reason === "string") return [reason];
   if (Array.isArray(findings)) {
-    return (findings as Finding[]).map((f) => `${METRIC_LABEL[f.metric]}: ${f.reason}`);
+    return (findings as Finding[]).map((f) => `${INCIDENT_METRIC_LABEL[f.metric]}: ${f.reason}`);
   }
   return [];
 }

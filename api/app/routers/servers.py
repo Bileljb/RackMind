@@ -5,7 +5,7 @@ from pydantic import AwareDatetime
 from sqlalchemy import select
 
 from app.deps import DbSession, Operator, require_user_or_ingest_key
-from app.models import Server
+from app.models import Server, ServerSource
 from app.schemas.inventory import ServerOut
 from app.schemas.metric import MetricOut
 from app.services import metrics as metrics_service
@@ -19,10 +19,14 @@ router = APIRouter(prefix="/servers", tags=["inventory"])
 
 # Inventory: read by people and by the simulator (API key).
 @router.get("", dependencies=[Depends(require_user_or_ingest_key)])
-async def list_servers(db: DbSession, rack_id: int | None = None) -> list[ServerOut]:
+async def list_servers(
+    db: DbSession, rack_id: int | None = None, source: ServerSource | None = None
+) -> list[ServerOut]:
     stmt = select(Server).order_by(Server.rack_id, Server.rack_unit)
     if rack_id is not None:
         stmt = stmt.where(Server.rack_id == rack_id)
+    if source is not None:
+        stmt = stmt.where(Server.source == source)
     servers = await db.scalars(stmt)
     return [ServerOut.model_validate(server) for server in servers]
 
