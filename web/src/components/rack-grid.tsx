@@ -143,7 +143,7 @@ function NoRealServers() {
         <li>
           Run <code className="rounded bg-page px-1.5 py-0.5 text-xs">rackmind_agent.py</code> on
           the machine with the server id it printed (see{" "}
-          <code className="rounded bg-page px-1.5 py-0.5 text-xs">docs/modules/agent.md</code>).
+          the README).
         </li>
         <li>Reload this page: the server appears within seconds.</li>
       </ol>

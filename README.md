@@ -92,7 +92,17 @@ That starts Postgres, Redis, the API, the worker, the simulator and the dashboar
 
 **See an incident happen.** With no real server connected, the dashboard opens in **Simulation mode** (or pick it in the header, or open `/?mode=simulation`). That starts the simulator and its demo scenario (`SIM_FAULTS`): `r02-srv03` gets a CPU spike (a critical incident within about a minute), then `r03-srv02` leaks memory, rack R04 overheats and `r01-srv03` fills its disk. Switching back to Live stops it; switching again replays the scenario.
 
-**Connect a real server.** Register it with `docker compose exec api python -m app.add_server web-01 --group Production`, then run [`agent/rackmind_agent.py`](agent/rackmind_agent.py) on the machine with the id it prints. Steps, including a systemd service, are in [`docs/modules/agent.md`](docs/modules/agent.md).
+**Connect a real server.** Register it with `docker compose exec api python -m app.add_server web-01 --group Production`, then run [`agent/rackmind_agent.py`](agent/rackmind_agent.py) on the machine with the id it prints. It needs Python 3.12+ and three settings: `RACKMIND_URL` (`https://<domain>/api` in production, `http://<host>:8000` in dev), `RACKMIND_KEY` (the `INGEST_API_KEY`) and `RACKMIND_SERVER_ID`. To run it as a service on Linux:
+
+```bash
+sudo mkdir -p /opt/rackmind-agent && sudo cp agent/rackmind_agent.py /opt/rackmind-agent/
+sudo python3 -m venv /opt/rackmind-agent/venv
+sudo /opt/rackmind-agent/venv/bin/pip install httpx psutil
+sudo nano /etc/rackmind-agent.env      # the three RACKMIND_* lines
+sudo chmod 600 /etc/rackmind-agent.env # the key is a secret
+sudo cp agent/rackmind-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now rackmind-agent
+```
 
 **AI diagnosis is optional.** Put a free key from [console.groq.com](https://console.groq.com/keys) in `GROQ_API_KEY`. Without one, everything else works, and incidents say the AI is not configured.
 
@@ -119,8 +129,7 @@ The detector (`api/app/services/detector.py`) is a set of pure functions, easy t
 **Silent servers:** detection runs when readings arrive, so it can't notice a server that stopped sending. A cron job in the worker (every 30 s) turns "no reading for 60 s" into a critical finding that goes through the same incident rules; when readings come back, the incident is marked "looks recovered".
 
 ### Simulation mode
-The simulator only runs while someone is in Simulation mode. Browsers in that mode refresh a Redis key with a 90 s expiry every 30 s; the simulator checks it before each cycle and sleeps while it is gone. Closing the tab needs no cleanup: the key just expires. Every list the dashboard shows is filtered by `?source=agent` or `?source=simulated`, so demo data never mixes with real servers. Details in [`docs/modules/simulation-mode.md`](docs/modules/simulation-mode.md).
-
+The simulator only runs while someone is in Simulation mode. Browsers in that mode refresh a Redis key with a 90 s expiry every 30 s; the simulator checks it before each cycle and sleeps while it is gone. Closing the tab needs no cleanup: the key just expires. Every list the dashboard shows is filtered by `?source=agent` or `?source=simulated`, so demo data never mixes with real servers.
 ### AI diagnosis, safely
 - **Context, not raw data.** About 1,800 raw readings are summarised into per-minute averages plus baseline statistics (~3.5k characters), along with rack neighbours (shared cause, or one machine?), the detector's reasons, and up to five similar resolved incidents with their comments.
 - **Two layers of validation.** The JSON Schema of the response model is sent to Groq in strict mode, then Pydantic validates the answer again before it is stored. Malformed output is stored as `invalid_output` and never shown.
@@ -177,7 +186,7 @@ cp .env.example .env    # real secrets, plus DOMAIN=your.domain
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-The production stack builds slim, non-root images without hot reload, keeps Postgres/Redis/API private to the Docker network, and puts **Caddy** in front for automatic HTTPS. Details in [`docs/modules/deployment.md`](docs/modules/deployment.md).
+The production stack builds slim, non-root images without hot reload, keeps Postgres/Redis/API private to the Docker network, and puts **Caddy** in front for automatic HTTPS.
 
 ## Project structure
 
@@ -192,12 +201,9 @@ api/              FastAPI app, worker, migrations, tests
 web/              Next.js dashboard
 simulator/        telemetry generator with fault injection (Simulation mode)
 agent/            rackmind-agent: one-file metrics sender for real Linux servers
-docs/modules/     short "how it works" notes per module
 docker-compose.yml        local development (hot reload)
 docker-compose.prod.yml   production (Caddy + HTTPS)
 ```
-
-Each module has a short write-up: [foundation](docs/modules/foundation.md) · [pipeline](docs/modules/pipeline.md) · [dashboard](docs/modules/dashboard.md) · [detection](docs/modules/detection.md) · [simulation mode](docs/modules/simulation-mode.md) · [agent](docs/modules/agent.md) · [auth & real-time](docs/modules/auth-and-realtime.md) · [AI diagnosis](docs/modules/ai-diagnosis.md) · [deployment](docs/modules/deployment.md)
 
 ## Roadmap
 

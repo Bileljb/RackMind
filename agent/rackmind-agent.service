@@ -1,5 +1,5 @@
 # systemd unit: runs the agent at boot and restarts it if it stops.
-# Install: see docs/modules/agent.md. Settings live in /etc/rackmind-agent.env.
+# Install: see "Connect a real server" in the README. Settings live in /etc/rackmind-agent.env.
 [Unit]
 Description=Rackmind monitoring agent
 After=network-online.target
