@@ -181,6 +181,23 @@ Backend tests run against a separate `<db>_test` database, and each test is roll
 
 ## Deployment
 
+### Free hosting (Vercel + Render + Neon)
+
+| Part | Host |
+|---|---|
+| Dashboard (`web/`) | Vercel |
+| API, worker and simulator, in one container | Render free web service ([`render.yaml`](render.yaml), [`deploy/render/`](deploy/render)) |
+| Redis | Render free Key Value (created by the same blueprint) |
+| Postgres | Neon free tier |
+
+1. **Neon:** create a project and copy its connection string. Use the direct one, not "pooled". It can be pasted as Neon shows it (`postgresql://...?sslmode=require`).
+2. **Render:** go to New > Blueprint and pick this repo. When asked, paste the Neon string as `DATABASE_URL`, a password for the demo users as `SEED_PASSWORD`, and optionally `GROQ_API_KEY`. `JWT_SECRET` and `INGEST_API_KEY` are generated for you. Wait for `https://<service>.onrender.com/health` to answer.
+3. **Vercel:** import the repo, set **Root Directory** to `web`, and add the environment variable `API_URL=https://<service>.onrender.com` before the first deploy, because it is read at build time. The browser only talks to Vercel, which forwards `/api/*` to Render.
+
+Free-tier limits: the Render service sleeps after 15 minutes without traffic, so the first visit after that waits about a minute. While it sleeps, the simulator and the heartbeat check pause too. The live stream may also reconnect now and then through Vercel's proxy. Agents sending readings keep the service awake. For agents, use `RACKMIND_URL=https://<your-app>.vercel.app/api` and the `INGEST_API_KEY` from Render's Environment tab. Render's free plan has no shell, so register servers from your machine against Neon: `docker compose run --rm -e DATABASE_URL='<neon string>' api python -m app.add_server web-01 --group Production`.
+
+### Own server (Docker Compose + Caddy)
+
 ```bash
 cp .env.example .env    # real secrets, plus DOMAIN=your.domain
 docker compose -f docker-compose.prod.yml up -d --build
@@ -201,6 +218,8 @@ api/              FastAPI app, worker, migrations, tests
 web/              Next.js dashboard
 simulator/        telemetry generator with fault injection (Simulation mode)
 agent/            rackmind-agent: one-file metrics sender for real Linux servers
+deploy/render/    single-container image for Render's free plan (API + worker + simulator)
+render.yaml       Render blueprint (backend + Redis)
 docker-compose.yml        local development (hot reload)
 docker-compose.prod.yml   production (Caddy + HTTPS)
 ```

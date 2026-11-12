@@ -1,8 +1,9 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn, SecretStr
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -38,6 +39,25 @@ class Settings(BaseSettings):
     # A real server with no reading for this long gets a "not reporting" incident. Agents send
     # every 5s, so 60s means about 12 missed readings: a dead machine, not a slow request.
     heartbeat_timeout_s: int = Field(default=60, ge=15)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _use_asyncpg(cls, value: object) -> object:
+        """Accept hosted-Postgres URLs as given (e.g. Neon's `postgresql://...?sslmode=require`).
+
+        The app needs the `+asyncpg` driver, and asyncpg spells the TLS option `ssl`, not
+        libpq's `sslmode`; it doesn't know `channel_binding` at all, so that one is dropped.
+        """
+        if not isinstance(value, str):
+            return value
+        url = make_url(value)
+        if url.drivername in ("postgres", "postgresql"):
+            url = url.set(drivername="postgresql+asyncpg")
+        query = dict(url.query)
+        query.pop("channel_binding", None)
+        if "sslmode" in query:
+            query["ssl"] = query.pop("sslmode")
+        return url.set(query=query).render_as_string(hide_password=False)
 
 
 @lru_cache

@@ -1,0 +1,43 @@
+# Render Blueprint: free hosting for the backend (Dashboard > New > Blueprint > this repo).
+# The dashboard itself goes on Vercel and the database on Neon: see "Free hosting" in the README.
+services:
+  # API + worker + simulator in one container (the free plan has no background workers).
+  - type: web
+    name: rackmind-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/render/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      # Neon connection string, pasted as Neon shows it (the direct one, not "pooled").
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: rackmind-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INGEST_API_KEY
+        generateValue: true
+      # Password of the three demo users.
+      - key: SEED_PASSWORD
+        sync: false
+      # Optional: leave empty to turn AI diagnosis off.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SIM_FAULTS
+        value: cpu_spike:r02-srv03:20:240,memory_leak:r03-srv02:60:900,overheat:R04:120:600,disk_fill:r01-srv03:180:900
+
+  # Job queue and live events. Internal only; noeviction so queued jobs are never dropped.
+  - type: keyvalue
+    name: rackmind-redis
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
